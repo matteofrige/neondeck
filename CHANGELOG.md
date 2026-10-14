@@ -2,6 +2,10 @@
 
 All notable changes to this project. Versions before 0.3.0 were released under the name *Claude Deck*.
 
+## 0.5.1
+
+- macOS: `neondeck install` waits for launchd to finish unloading the previous agent before loading the new one, and retries once on `Bootstrap failed: 5: Input/output error`.
+
 ## 0.5.0
 
 - **Visual redesign: dot-matrix LED.** Device/phone UI and admin now use an authored 5x7 dot-matrix face drawn as round LEDs over an unlit dot field (header counter "TOCCA A TE", amber only for sessions waiting for you, magenta for the brand and the selection). Sessions are sorted waiting first; long names scroll like a ticker; a tile whose state changes re-draws with a wipe; `prefers-reduced-motion` is respected.

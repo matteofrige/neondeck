@@ -3,7 +3,7 @@
   "displayName": "Neondeck Bridge",
   "description": "Exposes VS Code integrated terminals to the local Neondeck agent (Unix socket).",
   "publisher": "neondeck",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "license": "MIT",
   "repository": {
     "type": "git",

@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from ..config import env_home
@@ -47,8 +48,16 @@ def build_plist() -> dict:
     }
 
 
+def wait_unloaded(target: str, timeout: float = 5.0) -> None:
+    """bootout returns before launchd has torn the job down; bootstrap meanwhile fails with EIO (5)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline and launchctl("print", target).returncode == 0:
+        time.sleep(0.2)
+
+
 def remove_legacy_agent() -> None:
     res = launchctl("bootout", f"{DOMAIN}/{LEGACY_LABEL}")
+    wait_unloaded(f"{DOMAIN}/{LEGACY_LABEL}")
     if LEGACY_PLIST.exists():
         LEGACY_PLIST.unlink()
         print(f"Rimosso il vecchio LaunchAgent {LEGACY_PLIST}")
@@ -69,7 +78,11 @@ class MacService(Service):
             plistlib.dump(build_plist(), f)
         remove_legacy_agent()  # frees the port the old agent is holding
         launchctl("bootout", f"{DOMAIN}/{LABEL}")  # fails when not loaded: ignore
+        wait_unloaded(f"{DOMAIN}/{LABEL}")
         res = launchctl("bootstrap", DOMAIN, str(PLIST))
+        if res.returncode != 0 and "5:" in res.stderr:  # still tearing down: one more try
+            time.sleep(1.5)
+            res = launchctl("bootstrap", DOMAIN, str(PLIST))
         if res.returncode != 0:
             print(f"launchctl bootstrap non riuscito: {res.stderr.strip()}", file=sys.stderr)
             return 1
