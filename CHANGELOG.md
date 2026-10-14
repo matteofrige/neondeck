@@ -2,6 +2,12 @@
 
 All notable changes to this project. Versions before 0.3.0 were released under the name *Claude Deck*.
 
+## 0.5.0
+
+- **Visual redesign: dot-matrix LED.** Device/phone UI and admin now use an authored 5x7 dot-matrix face drawn as round LEDs over an unlit dot field (header counter "TOCCA A TE", amber only for sessions waiting for you, magenta for the brand and the selection). Sessions are sorted waiting first; long names scroll like a ticker; a tile whose state changes re-draws with a wipe; `prefers-reduced-motion` is respected.
+- New icon type `{"type": "glyph", "value": "<name>"}` (14 authored 11x11 pictograms, picked in the admin editor under "Simbolo LED"). The default buttons use it; existing buttons that still carry the old default emoji are upgraded on load, other emoji and images are untouched.
+- App icons (PNG) and `docs/assets/logo.svg`/`banner.svg` redrawn as LED dots; shared glyph table in `neondeck/ledfont.py` (embedded in both HTML files, kept identical by tests). README banner and screenshots regenerated from the demo; design system documented in `DESIGN.md`.
+
 ## 0.4.0
 
 - **Linux support.** The agent now runs on Linux as well as macOS. OS-specific code lives in `neondeck/platform/` (`macos.py`, `linux.py`), selected by `sys.platform`; other systems stop at startup with "Piattaforma non supportata".

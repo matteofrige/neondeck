@@ -163,7 +163,7 @@ Everything lives in `~/.config/neondeck/` (override with `NEONDECK_HOME`; on Lin
 <details>
 <summary><b><code>buttons.json</code> schema and examples</b></summary>
 
-An array of buttons. Every button has `id`, `title` (1 to 40 characters), `icon` (`{"type": "emoji", "value": "🚀"}` or `{"type": "image", "value": "icons/name.png"}`), an optional `color` (`#rrggbb`) and an `action`. The easiest way to edit them is the admin panel (`neondeck admin`), which also uploads images (png, jpg, gif, webp or svg, up to 2 MB) into `icons/`.
+An array of buttons. Every button has `id`, `title` (1 to 40 characters), `icon` (`{"type": "glyph", "value": "rocket"}` for a dot-matrix LED symbol (`esc`, `enter`, `stop`, `mode`, `tab`, `up`, `down`, `rocket`, `book`, `bolt`, `terminal`, `refresh`, `play`, `check`), `{"type": "emoji", "value": "🚀"}` or `{"type": "image", "value": "icons/name.png"}`), an optional `color` (`#rrggbb`) and an `action`. The easiest way to edit them is the admin panel (`neondeck admin`), which also uploads images (png, jpg, gif, webp or svg, up to 2 MB) into `icons/`.
 
 The first run creates four buttons: Esc, Enter, Interrupt (Ctrl+C) and Switch mode (Shift+Tab).
 
@@ -172,7 +172,7 @@ The first run creates four buttons: Esc, Enter, Interrupt (Ctrl+C) and Switch mo
   {
     "id": "enter",
     "title": "Invio",
-    "icon": { "type": "emoji", "value": "↵" },
+    "icon": { "type": "glyph", "value": "enter" },
     "action": { "type": "send_keys", "text": "\r", "target": "current" }
   },
   {
@@ -211,9 +211,10 @@ The first run creates four buttons: Esc, Enter, Interrupt (Ctrl+C) and Switch mo
 <details open>
 <summary><b>Reading the grid</b></summary>
 
-- **Status color.** Amber and pulsing = *busy* (Claude is working). Green = *idle* (waiting for you). Blue = a plain *shell*. Terminal tiles (panes that do not run Claude Code) are cyan and dimmed until focused.
-- **Outlines.** A thin white outline marks the session currently in front on the computer; a thick one marks the tile you selected on the device (the target of `selected` buttons).
-- **Host badge.** `iT` = iTerm2, `TM` = tmux, `WZ` = WezTerm, `KT` = kitty, `VS` = VS Code / Cursor. It is followed by the location label.
+- **Who needs you.** Amber is reserved for one meaning: a Claude Code session waiting for you ("TOCCA A TE", its status word blinking like a departing train). The header shows how many there are as one large amber number, and those tiles are sorted first.
+- **Other states.** White LEDs at reduced intensity: *in corso* (working, with three chasing dots), *comando* (a shell command, marked with `$`), terminal panes (a monitor glyph and the running program's name). View-only sessions are dimmed; empty slots show unlit modules. A tile whose state changes redraws with a left-to-right LED wipe.
+- **Outlines.** A thin white outline marks the session currently in front on the computer; a magenta outline marks the tile you selected on the device (the target of `selected` buttons).
+- **Host code.** Bottom right of each tile: `IT2` = iTerm2, `TMX` = tmux, `WZT` = WezTerm, `KTY` = kitty, `VSC` = VS Code / Cursor.
 - **Location label.** iTerm2: `F1·T2` = window 1, tab 2; `F1·T2·P2` adds pane 2 when the tab is split (windows follow iTerm2's own order). tmux: `tmux work:2.1` = session `work`, window 2, pane 1. WezTerm and kitty: `wezterm 1:2.1` / `kitty 1:2.1` = window 1, tab 2, pane 1.
 - **Subtitle.** Time in the current status for Claude tiles ("3 min"); the current folder or location for terminals.
 - **Non-controllable tiles.** Sessions running in a terminal the agent cannot drive (Terminal.app or Ghostty without tmux, a VS Code window without the bridge, ...) are dimmed, show "non comandabile" and cannot be selected.

@@ -22,6 +22,7 @@ from . import platform
 from .buttons import ButtonStore, ValidationError, run_button
 from .config import config_mtime, home_dir, lan_ips, load_config, preview_url, save_config
 from .errors import ControlError
+from .ledfont import MASCOT, bitmap_cells
 from .netguard import (LOCALNET, NO_ARP, NO_ROUTE, LOCALNET_WARN_EVERY, AuthThrottle, LanController, NetworkMonitor, RateLimitedLog,
                        in_local_subnet, is_trusted, localnet_guidance, new_entry, normalize_mac)
 from .sessions import Context, SessionTracker, frontmost_app
@@ -511,36 +512,41 @@ async def manifest(request):
     return web.Response(text=json.dumps(data), content_type="application/manifest+json")
 
 
-# Pixel-art mascot on a 16x14 grid (x, y, w, h), painted in this order: body, visor cut-out, eyes.
-MASCOT_BODY = ((7, 0, 2, 2), (2, 2, 12, 9), (0, 5, 2, 3), (14, 5, 2, 3), (5, 11, 6, 1), (2, 12, 12, 2))
-MASCOT_CUT = ((3, 5, 10, 3), (5, 9, 1, 1), (7, 9, 1, 1), (9, 9, 1, 1), (6, 12, 4, 1))
-MASCOT_EYES = ((4, 6, 3, 1), (9, 6, 3, 1))
+MAGENTA, UNLIT, GROUND = (255, 46, 136), (24, 21, 15), (5, 5, 5)
+ICON_GRID = 28  # LED cells per side; the 16x14 mascot sits in the middle
+
+
+def _dot_run(color: tuple, c: int, py: int) -> bytes:
+    """One pixel row (c pixels wide) of a round LED of the given color on the ground, anti-aliased on the edge."""
+    r, mid = c * 0.40, (c - 1) / 2
+    out = bytearray()
+    for px in range(c):
+        cov = max(0.0, min(1.0, r - math.hypot(px - mid, py - mid) + 0.5))
+        out += bytes(round(g + (k - g) * cov) for g, k in zip(GROUND, color))
+    return bytes(out)
 
 
 @functools.lru_cache(maxsize=8)
 def make_icon(size: int) -> bytes:
-    """PNG app icon: the neon mascot on black, nearest-neighbor scaled, with no dependencies."""
-    body, eyes, black = (255, 60, 199), (25, 240, 255), (0, 0, 0)
-    scale = max(1, int(size * 0.62) // 16)
-    ox, oy = (size - 16 * scale) // 2, (size - 14 * scale) // 2
-    grid = [[None] * 16 for _ in range(14)]
-    for rects, color in ((MASCOT_BODY, body), (MASCOT_CUT, black), (MASCOT_EYES, eyes)):
-        for x, y, w, h in rects:
-            for yy in range(y, y + h):
-                for xx in range(x, x + w):
-                    grid[yy][xx] = color
+    """PNG app icon: the mascot as round magenta LEDs over a faint unlit dot field, no dependencies."""
+    c = max(2, size // ICON_GRID)
+    ox = (size - ICON_GRID * c) // 2
+    lit = {(x + (ICON_GRID - 16) // 2, y + (ICON_GRID - 14) // 2) for x, y in bitmap_cells(MASCOT)}
+    runs = {(on, py): _dot_run(MAGENTA if on else UNLIT, c, py) for on in (True, False) for py in range(c)}
+    margin = bytes(GROUND) * ox
+    tail = bytes(GROUND) * (size - ox - ICON_GRID * c)
+    blank = b"\x00" + bytes(GROUND) * size
     raw = bytearray()
     for y in range(size):
+        gy, py = divmod(y - ox, c)
+        if y < ox or gy >= ICON_GRID:
+            raw += blank
+            continue
         raw.append(0)
-        gy = (y - oy) // scale
-        row = grid[gy] if 0 <= y - oy and 0 <= gy < 14 else None
-        for x in range(size):
-            gx = (x - ox) // scale
-            px = row[gx] if row is not None and 0 <= x - ox and 0 <= gx < 16 else None
-            px = px or black
-            if y % 4 == 3:  # faint scanlines
-                px = tuple(c * 3 // 4 for c in px)
-            raw += bytes(px)
+        raw += margin
+        for gx in range(ICON_GRID):
+            raw += runs[((gx, gy) in lit, py)]
+        raw += tail
 
     def chunk(tag, data):
         c = struct.pack(">I", len(data)) + tag + data

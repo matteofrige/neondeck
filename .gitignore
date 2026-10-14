@@ -7,3 +7,5 @@ build/
 .DS_Store
 .claude/
 .pytest_cache/
+.impeccable/review/
+.impeccable/build/

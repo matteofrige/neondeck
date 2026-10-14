@@ -3,268 +3,537 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#050505">
 <title>Neondeck – Amministrazione</title>
 <style>
-  :root {
-    color-scheme: light dark;
-    --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --muted: #6e6e73; --line: #d8d8de;
-    --accent: #c2188f; --accent-text: #fff; --ok: #1f9d55; --err: #d93636; --field: #fff;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root { --bg: #131316; --card: #1c1c21; --text: #f2f2f5; --muted: #9a9aa6; --line: #34343c;
-      --accent: #ff3cc7; --accent-text: #1a0316; --ok: #3ccf7a; --err: #ff6b6b; --field: #121216; }
-  }
-  * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-  .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 16px 64px; }
-  h1 { font-size: 24px; margin: 0 0 4px; }
-  h2 { font-size: 16px; margin: 0 0 12px; }
-  .lead { color: var(--muted); margin: 0 0 20px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 18px; }
-  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
-  @media (max-width: 820px) { .grid2 { grid-template-columns: 1fr; } }
-  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; color: var(--muted); }
+/*led-css:begin*/
+:root {
+  color-scheme: dark;
+  --ground: #050505; --panel: #0c0b09; --unlit: #1d1a14; --amber: #ffb000; --amber-dim: #6b4a00;
+  --led: #e8eefc; --led-mid: rgba(232,238,252,.62); --led-low: rgba(232,238,252,.32);
+  --magenta: #ff2e88; --ok: #36e07a; --err: #ff4033; --rule: #1a1814;
+  --prose: #cfcabf; --prose-2: #8f8a80;
+  --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.led { display: block; flex: none; }
+.mq { overflow: hidden; min-width: 0; }
+.mqi { display: inline-block; vertical-align: top; will-change: transform; }
+.mq, .mqi { line-height: 0; font-size: 0; }
+@keyframes marquee { 0%, 16% { transform: translateX(0); } 88%, 100% { transform: translateX(var(--shift)); } }
+.mq.scroll .mqi { animation: marquee var(--dur) steps(var(--steps)) infinite; }
+
+/* Tile: an LED module. .cq is the size container, .in carries the unlit dot field. */
+.tile { position: relative; display: block; width: 100%; aspect-ratio: 1 / 1; min-width: 0; padding: 0; overflow: hidden;
+  border: 1px solid #16140f; border-radius: 6px; background: var(--panel); color: var(--led);
+  font: inherit; cursor: pointer; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: manipulation; }
+.tile .cq { position: absolute; inset: 0; container-type: inline-size; }
+.tile .in { --f: calc(100cqw / 50); position: absolute; inset: 0; padding: calc(var(--f) * 3);
+  display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: calc(var(--f) * 2);
+  background-image: radial-gradient(circle, color-mix(in srgb, var(--unlit) 40%, transparent) 0 38%, transparent 42%); background-size: var(--f) var(--f); }
+.tile::after { content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; }
+.tile:active .cq { opacity: .7; }
+.tile .ico, .tile .mid { min-width: 0; min-height: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.tile .ico > svg, .tile .mid > svg { height: 100%; width: auto; max-width: 100%; }
+.tile.act .ico .sq { height: 100%; width: auto; max-width: 52%; }
+.tile.act .lbl { width: 100%; }
+.tile.act .lbl .mq { display: flex; justify-content: center; }
+.tile.act .lbl .mqi { margin: 0 auto; }
+.tile.act .lbl .mq.scroll { display: block; }
+.tile.tinted { background: color-mix(in srgb, var(--c) 12%, var(--panel)); }
+.tile .sq { width: 52%; aspect-ratio: 1 / 1; display: grid; place-items: center; font-size: 30cqw; line-height: 1; }
+.tile .sq img { width: 100%; height: 100%; object-fit: contain; display: block; image-rendering: auto; }
+.tile:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
+.tile.res-ok::after { box-shadow: inset 0 0 0 1px var(--ok); }
+.tile.res-err::after { box-shadow: inset 0 0 0 1px var(--err); }
+@media (prefers-reduced-motion: reduce) {
+  .mq.scroll .mqi { animation: none; }
+  .mq.scroll { -webkit-mask-image: linear-gradient(90deg, #000 78%, transparent); mask-image: linear-gradient(90deg, #000 78%, transparent); }
+}
+/*led-css:end*/
+  * { box-sizing: border-box; scrollbar-width: thin; scrollbar-color: #1a1814 transparent; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-thumb { background: #1a1814; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::selection { background: rgba(255, 46, 136, .3); }
+  :focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
+  html { background: var(--ground); }
+  body { margin: 0; background: var(--ground); color: var(--prose); font: 15px/1.5 var(--sans); caret-color: var(--led);
+    font-variant-numeric: tabular-nums; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 28px 20px 80px; }
+  .top { display: flex; align-items: flex-end; gap: 14px; padding-bottom: 22px; margin-bottom: 8px; border-bottom: 1px solid var(--rule); }
+  .top h1 { margin: 0; display: flex; align-items: flex-end; gap: 14px; }
+  .lead { color: var(--prose-2); margin: 14px 0 0; }
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 56px; }
+  @media (min-width: 1000px) { .cols { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); } }
+  .sec { padding: 28px 0 8px; }
+  .sec h2 { margin: 0 0 16px; padding-bottom: 10px; border-bottom: 1px solid var(--rule); font-size: 20px; line-height: 1; }
+  .sec h2 .led { margin-bottom: 0; }
+  .hd { border-bottom: 1px solid var(--rule); margin-bottom: 16px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  label { display: block; font-size: 13px; margin: 14px 0 4px; color: var(--prose-2); }
   input[type=text], input[type=number], input[type=url], select, textarea {
-    width: 100%; padding: 9px 11px; border-radius: 9px; border: 1px solid var(--line);
-    background: var(--field); color: var(--text); font: inherit; }
-  textarea { font-family: ui-monospace, Menlo, monospace; font-size: 13px; min-height: 70px; resize: vertical; }
-  input[type=color] { width: 56px; height: 36px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); }
-  input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  button { font: inherit; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--text);
+    width: 100%; padding: 9px 11px; border-radius: 6px; border: 1px solid #2a261e; background: #000; color: var(--prose); font: inherit; }
+  textarea { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; min-height: 70px; resize: vertical; }
+  input[type=file] { color: var(--prose-2); font: inherit; font-size: 13px; }
+  input[type=color] { width: 56px; height: 36px; padding: 2px; border: 1px solid #2a261e; border-radius: 6px; background: #000; }
+  input[type=checkbox] { accent-color: var(--magenta); }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--magenta); outline-offset: 1px; }
+  button { font: inherit; border-radius: 6px; border: 1px solid var(--led-low); background: transparent; color: var(--prose);
     padding: 7px 13px; cursor: pointer; }
-  button:hover { border-color: var(--muted); }
-  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
-  button.danger { color: var(--err); }
-  button.small { padding: 4px 9px; font-size: 13px; }
+  button:hover { border-color: var(--led-mid); }
+  button:disabled { opacity: .4; cursor: default; }
+  button.primary { background: var(--led); border-color: var(--led); color: #000; font-weight: 600; display: inline-flex; align-items: center; min-height: 36px; }
+  button.primary:hover { opacity: .9; }
+  button.danger { color: var(--err); border-color: var(--err); }
+  button.small { padding: 4px 10px; font-size: 13px; }
+  button.ib { width: 32px; height: 32px; padding: 0; display: inline-grid; place-items: center; flex: none; }
+  button.ib svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
   .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .grow { flex: 1; min-width: 0; }
-  code, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
-  .token { background: var(--bg); border-radius: 8px; padding: 6px 10px; word-break: break-all; }
-  .muted { color: var(--muted); }
+  .row.stack { flex-direction: column; align-items: stretch; }
+  .row.stack .grow { flex: none; width: 100%; }
+  .row.stack button { align-self: flex-start; }
+  a { color: var(--prose); text-underline-offset: 3px; }
+  code, .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; }
+  code.token { background: #000; border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; word-break: break-all; }
+  .muted { color: var(--prose-2); }
+  p.muted { margin: 8px 0; }
 
-  .item { display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid var(--line);
-    border-radius: 11px; margin-bottom: 8px; background: var(--card); }
+  .lamp { display: inline-flex; align-items: center; gap: 8px; }
+  .lamp i { width: 8px; height: 8px; border-radius: 50%; background: var(--unlit); flex: none; }
+  .lamp.ok i { background: var(--led); }
+  .lamp.warn i { background: var(--err); }
+  .lamp.err i { background: var(--err); }
+
+  .item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--rule); }
   .item.drag { opacity: .4; }
-  .item.over { border-color: var(--accent); }
-  .handle { cursor: grab; color: var(--muted); padding: 0 4px; user-select: none; }
+  .item.over { border-top-color: var(--led); }
+  .handle { color: var(--prose-2); cursor: grab; display: grid; place-items: center; width: 14px; flex: none; }
+  .handle svg { width: 14px; height: 18px; fill: currentColor; }
+  .mini { width: 56px; flex: none; }
+  .mini .tile, .pv .tile { pointer-events: none; }
+  .mini .lbl { display: none; }
+  .mini .tile .in { padding: 0; justify-content: center; }
+  .pv { width: 160px; flex: none; }
   .meta { flex: 1; min-width: 0; }
-  .meta b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .meta span { font-size: 12.5px; color: var(--muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .test-res { font-size: 13px; padding: 6px 10px; border-radius: 8px; margin: 0 0 8px; white-space: pre-wrap; }
-  .test-res.ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
-  .test-res.err { background: color-mix(in srgb, var(--err) 18%, transparent); color: var(--err); }
+  .meta b { display: block; font-weight: 600; color: var(--prose); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meta span { font-size: 13px; color: var(--prose-2); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ctl { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+  .test-res { font-size: 13px; padding: 4px 0 10px 26px; white-space: pre-wrap; }
+  .test-res.ok { color: var(--ok); }
+  .test-res.err { color: var(--err); }
 
-  /* Same Stream Deck look as the device (preview.html), shown on a black swatch */
-  .swatch { background: #000; border-radius: 12px; padding: 12px; display: inline-flex; flex: none; }
-  .tile { --c: #444; width: 96px; aspect-ratio: 1 / 1; padding: 0; overflow: hidden;
-    border: 1px solid #262626; border-radius: 14%; background: #151515; color: #fff; flex: none; }
-  .tile .in { container-type: inline-size; width: 100%; height: 100%; padding: 8% 4% 6%;
-    display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
-  .tile.tinted { background: color-mix(in srgb, var(--c) 22%, #0d0d0d); border-color: color-mix(in srgb, var(--c) 45%, #1a1a1a); }
-  .tile .ic { flex: none; width: 100%; height: 58cqw; font-size: 44cqw; line-height: 58cqw; text-align: center; overflow: hidden; }
-  .tile .ic img { width: 100%; height: 100%; object-fit: contain; display: block; }
-  .tile .t { width: 100%; text-align: center; font-size: 12px; font-weight: 500; line-height: 1.2;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .tile.sm { width: 44px; border-radius: 10px; }
-  .tile.sm .in { padding: 3px; }
-  .tile.sm .ic { height: 100%; font-size: 24px; line-height: 36px; }
-  .tile.sm .t { display: none; }
-
-  .tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
-  .tabs button { border: 0; border-radius: 0; background: transparent; }
-  .tabs button.on { background: var(--accent); color: var(--accent-text); }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--rule); }
+  .tabs button { border: 0; border-bottom: 2px solid transparent; border-radius: 0; margin-bottom: -1px; color: var(--prose-2); }
+  .tabs button.on { border-bottom-color: var(--led); color: var(--led); }
+  .glyphs { display: grid; grid-template-columns: repeat(auto-fill, minmax(52px, 1fr)); gap: 6px; margin-top: 10px; }
+  .glyphs button { aspect-ratio: 1 / 1; padding: 0; display: grid; place-items: center; background: var(--panel); border-color: var(--rule); }
+  .glyphs button.on { border-color: var(--led); }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
-  .chips button { padding: 3px 10px; font-size: 13px; border-radius: 99px; }
-  .hint { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
-  .error { color: var(--err); font-size: 13.5px; margin-top: 10px; min-height: 1em; }
+  .chips button { padding: 3px 10px; font-size: 13px; }
+  .hint { font-size: 13px; color: var(--prose-2); margin-top: 4px; }
+  .error { color: var(--err); font-size: 14px; margin-top: 10px; min-height: 1em; }
   .hidden { display: none !important; }
 
-  .pill { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 12.5px; font-weight: 600;
-    background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted); }
-  .pill.ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
-  .pill.err { background: color-mix(in srgb, var(--err) 18%, transparent); color: var(--err); }
-  .netbox { border: 1px solid var(--line); border-radius: 11px; padding: 12px; margin-bottom: 12px; }
-  .netbox dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 8px 0 0; font-size: 13.5px; }
-  .netbox dt { color: var(--muted); }
-  .netbox dd { margin: 0; word-break: break-all; }
+  dl.net { display: grid; grid-template-columns: max-content 1fr; gap: 4px 18px; margin: 12px 0 0; font-size: 14px; }
+  dl.net dt { color: var(--prose-2); }
+  dl.net dd { margin: 0; word-break: break-all; }
   .netname { font: inherit; font-weight: 600; padding: 3px 7px; border-color: transparent; background: transparent; }
-  .netname:hover, .netname:focus { border-color: var(--line); background: var(--field); }
-  .warn { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+  .netname:hover, .netname:focus { border-color: #2a261e; background: #000; }
+  .warn { color: var(--prose-2); font-size: 13px; margin: 8px 0 0; }
+  #qr { border: 1px solid var(--rule); flex: none; width: 240px; height: 240px; }
+  #list > div:first-child .item { border-top-color: transparent; }
 </style>
 </head>
 <body>
 <div class="wrap" id="keyGate" hidden>
-  <section class="card">
-    <h1>Chiave di amministrazione</h1>
-    <p class="lead" id="keyMsg">Apri l'admin con il comando <code>neondeck admin</code>.</p>
+  <section class="sec">
+    <h2 data-led="Chiave di amministrazione">Chiave di amministrazione</h2>
+    <p class="muted" id="keyMsg">Apri l'admin con il comando <code>neondeck admin</code>.</p>
     <p class="muted">In alternativa incolla qui la chiave stampata da <code>neondeck token --admin</code>.</p>
     <form class="row" id="keyForm">
-      <input type="text" id="keyInput" class="grow" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Chiave admin">
-      <button class="primary" type="submit">Entra</button>
+      <input type="text" id="keyInput" class="grow" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Chiave admin" aria-label="Chiave admin">
+      <button class="primary" type="submit" data-ledlabel="Entra">Entra</button>
     </form>
   </section>
 </div>
 <div class="wrap" id="main">
-  <h1>Neondeck</h1>
+  <div class="top"><h1 aria-label="Neondeck Admin"><span id="brand"></span><span id="brandSub"></span></h1></div>
   <p class="lead">Configura i pulsanti del dispositivo. Questa pagina è accessibile solo da questo computer.</p>
 
-  <section class="card" id="netCard">
-    <h2>Reti fidate</h2>
-    <div class="netbox">
-      <div class="row">
-        <b class="grow" id="netCurName">Rete sconosciuta</b>
-        <span class="pill" id="netPill">…</span>
-      </div>
-      <div class="error" id="netReason" style="margin:6px 0 0;min-height:0"></div>
-      <dl>
-        <dt>Gateway</dt><dd class="mono" id="netGw">-</dd>
-        <dt>MAC</dt><dd class="mono" id="netMac">-</dd>
-        <dt>Subnet</dt><dd class="mono" id="netSubnet">-</dd>
-        <dt>Accesso dalla rete</dt><dd id="netLan">-</dd>
-        <dt>Bonjour</dt><dd id="netBonjour">-</dd>
-      </dl>
-      <div id="netTrustBox" class="hidden" style="margin-top:12px">
-        <form class="row" id="netTrustForm">
-          <input type="text" id="netTrustName" class="grow" maxlength="64" autocomplete="off" placeholder="Casa, Ufficio, Hotspot…" aria-label="Nome della rete">
-          <button class="primary" type="submit">Considera fidata questa rete</button>
-        </form>
-        <p class="warn">Approva solo reti private che controlli: chiunque su una rete fidata può raggiungere il device con il token.</p>
-      </div>
-      <div class="error" id="netError"></div>
+  <div class="cols">
+    <div>
+      <section class="sec" id="netCard">
+        <h2 data-led="Reti fidate">Reti fidate</h2>
+        <div class="row">
+          <b class="grow" id="netCurName">Rete sconosciuta</b>
+          <span class="lamp" id="netPill"><i></i><span>…</span></span>
+        </div>
+        <div class="error" id="netReason" style="margin:6px 0 0;min-height:0"></div>
+        <dl class="net">
+          <dt>Gateway</dt><dd class="mono" id="netGw">-</dd>
+          <dt>MAC</dt><dd class="mono" id="netMac">-</dd>
+          <dt>Subnet</dt><dd class="mono" id="netSubnet">-</dd>
+          <dt>Accesso dalla rete</dt><dd id="netLan">-</dd>
+          <dt>Bonjour</dt><dd id="netBonjour">-</dd>
+        </dl>
+        <div id="netTrustBox" class="hidden" style="margin-top:14px">
+          <form class="row stack" id="netTrustForm">
+            <input type="text" id="netTrustName" class="grow" maxlength="64" autocomplete="off" placeholder="Casa, Ufficio, Hotspot…" aria-label="Nome della rete">
+            <button class="primary" type="submit" data-ledlabel="Considera fidata questa rete">Considera fidata questa rete</button>
+          </form>
+          <p class="warn">Approva solo reti private che controlli: chiunque su una rete fidata può raggiungere il device con il token.</p>
+        </div>
+        <div class="error" id="netError"></div>
+        <div id="netList" style="margin-top:8px"></div>
+      </section>
+
+      <section class="sec" id="infoCard">
+        <h2 data-led="Dispositivo">Dispositivo</h2>
+        <div class="row"><span class="muted">Indirizzo agent:</span><code id="lanUrl">…</code></div>
+        <div class="row" style="margin-top:8px">
+          <span class="muted">Token:</span>
+          <code class="token grow" id="token">…</code>
+          <button class="small" id="copyToken">Copia</button>
+        </div>
+        <div class="row" style="margin-top:12px">
+          <a id="previewLink" href="#" target="_blank" rel="noopener">Apri anteprima del dispositivo</a>
+          <span class="muted">(aggiungi <code>&amp;frame=1</code> per il simulatore 800×480)</span>
+        </div>
+        <h3 class="muted" style="font-size:14px;font-weight:600;margin:24px 0 8px">Telecomando sul telefono</h3>
+        <p class="muted hidden" id="qrOff" style="margin-top:0">Il telefono non può collegarsi: rete non fidata.</p>
+        <div class="row" id="qrBox" style="align-items:flex-start;gap:20px">
+          <canvas id="qr" width="240" height="240" aria-label="QR code per il telefono"></canvas>
+          <div class="grow" style="min-width:200px">
+            <p class="muted" style="margin-top:0">Inquadra il QR code con il telefono (stessa rete Wi-Fi), poi su iPhone usa Condividi › Aggiungi alla schermata Home.</p>
+            <code class="token" id="phoneUrl" style="display:block"></code>
+            <div class="row" style="margin-top:10px"><button class="small" id="copyPhone">Copia link</button></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="sec hidden" id="netWarn">
+        <h2 data-led="Permesso Rete locale mancante">Permesso Rete locale mancante</h2>
+        <p class="muted" style="margin:0" id="netWarnMsg"></p>
+      </section>
+
+      <section class="sec" id="prefsCard">
+        <h2 data-led="Impostazioni">Impostazioni</h2>
+        <label class="row" style="margin:0;font-size:15px;color:var(--prose)"><input type="checkbox" id="fShowAll"> Mostra tutte le sessioni dei terminali, non solo Claude Code</label>
+        <div class="hint">Ogni pannello di iTerm2, tmux, WezTerm e kitty diventa una tessera; le sessioni Claude Code mantengono la loro.</div>
+      </section>
     </div>
-    <div id="netList"></div>
-  </section>
 
-  <section class="card" id="infoCard">
-    <h2>Collegamento del dispositivo</h2>
-    <div class="row"><span class="muted">Indirizzo agent:</span><code id="lanUrl">…</code></div>
-    <div class="row" style="margin-top:8px">
-      <span class="muted">Token:</span>
-      <code class="token grow" id="token">…</code>
-      <button class="small" id="copyToken">Copia</button>
-    </div>
-    <div class="row" style="margin-top:10px">
-      <a id="previewLink" href="#" target="_blank" rel="noopener">Apri anteprima del dispositivo</a>
-      <span class="muted">(aggiungi <code>&amp;frame=1</code> per il simulatore 800×480)</span>
-    </div>
-    <h2 style="margin-top:18px">Telecomando sul telefono</h2>
-    <p class="muted hidden" id="qrOff" style="margin-top:0">Il telefono non può collegarsi: rete non fidata.</p>
-    <div class="row" id="qrBox" style="align-items:flex-start;gap:16px">
-      <canvas id="qr" width="200" height="200" style="background:#fff;border-radius:8px;flex:none" aria-label="QR code per il telefono"></canvas>
-      <div class="grow">
-        <p class="muted" style="margin-top:0">Inquadra il QR code con il telefono (stessa rete Wi-Fi), poi su iPhone usa Condividi › Aggiungi alla schermata Home.</p>
-        <code class="token" id="phoneUrl" style="display:block"></code>
-        <div class="row" style="margin-top:8px"><button class="small" id="copyPhone">Copia link</button></div>
-      </div>
-    </div>
-  </section>
+    <div>
+      <section class="sec">
+        <div class="row hd"><h2 class="grow" data-led="Pulsanti" style="margin:0;border:0;padding:0 0 10px">Pulsanti</h2>
+          <button class="primary small" id="newBtn" data-ledlabel="Nuovo pulsante" style="margin-bottom:10px">Nuovo pulsante</button></div>
+        <p class="hint" style="margin-top:0">Trascina le righe per riordinarle, oppure usa le frecce.</p>
+        <div id="list"></div>
+      </section>
 
-  <section class="card hidden" id="netWarn">
-    <h2>Permesso Rete locale mancante</h2>
-    <p class="muted" style="margin:0" id="netWarnMsg"></p>
-  </section>
+      <section class="sec hidden" id="editor">
+        <h2 id="editorTitle" data-led="Nuovo pulsante">Nuovo pulsante</h2>
+        <div class="row" style="margin-bottom:6px;gap:16px;align-items:flex-end">
+          <div class="pv" id="tilePreview"></div>
+          <span class="muted">Anteprima</span>
+        </div>
 
-  <section class="card" id="prefsCard">
-    <h2>Sessioni</h2>
-    <label class="row" style="margin:0;font-weight:400"><input type="checkbox" id="fShowAll"> Mostra tutte le sessioni dei terminali, non solo Claude Code</label>
-    <div class="hint">Ogni pannello di iTerm2, tmux, WezTerm e kitty diventa una tessera; le sessioni Claude Code mantengono la loro.</div>
-  </section>
+        <label for="fTitle">Titolo</label>
+        <input type="text" id="fTitle" maxlength="40">
 
-  <div class="grid2">
-    <section class="card">
-      <div class="row"><h2 class="grow" style="margin:0">Pulsanti</h2>
-        <button class="primary small" id="newBtn">Nuovo pulsante</button></div>
-      <p class="hint">Trascina le righe per riordinarle, oppure usa le frecce.</p>
-      <div id="list"></div>
-    </section>
+        <label>Icona</label>
+        <div class="tabs" id="iconTabs">
+          <button type="button" data-t="glyph" class="on">Simbolo LED</button>
+          <button type="button" data-t="emoji">Emoji</button>
+          <button type="button" data-t="image">Immagine</button>
+        </div>
+        <div id="iconGlyph" class="glyphs" role="group" aria-label="Simboli LED"></div>
+        <div id="iconEmoji" class="hidden" style="margin-top:10px">
+          <input type="text" id="fEmoji" maxlength="16" placeholder="Es. 🚀" aria-label="Emoji">
+        </div>
+        <div id="iconImage" class="hidden row" style="margin-top:10px">
+          <input type="file" id="fFile" accept=".png,.jpg,.jpeg,.gif,.webp,.svg" aria-label="Immagine">
+          <span class="muted" id="fileName"></span>
+        </div>
+        <div class="hint hidden" id="imgHint">PNG, JPG, GIF, WebP o SVG, massimo 2 MB.</div>
 
-    <section class="card hidden" id="editor">
-      <h2 id="editorTitle">Nuovo pulsante</h2>
-      <div class="row" style="margin-bottom:6px">
-        <div class="swatch"><div class="tile" id="tilePreview"><div class="in"><div class="ic"></div><div class="t"></div></div></div></div>
-        <span class="muted">Anteprima</span>
-      </div>
+        <label for="fColor">Colore</label>
+        <div class="row">
+          <input type="color" id="fColor" value="#3a3f4b">
+          <label class="row" style="margin:0;font-size:15px;color:var(--prose)"><input type="checkbox" id="fNoColor"> Nessun colore</label>
+        </div>
 
-      <label for="fTitle">Titolo</label>
-      <input type="text" id="fTitle" maxlength="40">
-
-      <label>Icona</label>
-      <div class="tabs" id="iconTabs">
-        <button type="button" data-t="emoji" class="on">Emoji</button>
-        <button type="button" data-t="image">Immagine</button>
-      </div>
-      <div id="iconEmoji" style="margin-top:8px">
-        <input type="text" id="fEmoji" maxlength="16" placeholder="Es. 🛑">
-      </div>
-      <div id="iconImage" class="hidden row" style="margin-top:8px">
-        <input type="file" id="fFile" accept=".png,.jpg,.jpeg,.gif,.webp,.svg">
-        <span class="muted" id="fileName"></span>
-      </div>
-      <div class="hint hidden" id="imgHint">PNG, JPG, GIF, WebP o SVG, massimo 2 MB.</div>
-
-      <label for="fColor">Colore</label>
-      <div class="row">
-        <input type="color" id="fColor" value="#3a3f4b">
-        <label class="row" style="margin:0;font-weight:400"><input type="checkbox" id="fNoColor"> Nessun colore</label>
-      </div>
-
-      <label for="fType">Azione</label>
-      <select id="fType">
-        <option value="send_keys">Invia tasti alla sessione</option>
-        <option value="shell">Comando shell</option>
-        <option value="open_url">Apri URL</option>
-        <option value="focus_session">Vai alla sessione</option>
-      </select>
-
-      <div id="aSend">
-        <label>Tasti rapidi</label>
-        <div class="chips" id="chips"></div>
-        <label for="fText">Testo da inviare</label>
-        <textarea id="fText" spellcheck="false"></textarea>
-        <div class="hint">Sequenze di escape: <code>\e</code> Esc, <code>\r</code> Invio, <code>\n</code> a capo, <code>\t</code> Tab, <code>\x03</code> Ctrl+C, <code>\\</code> barra inversa.</div>
-        <label for="fTarget">Destinazione</label>
-        <select id="fTarget">
-          <option value="current">Sessione in primo piano (terminale o VS Code)</option>
-          <option value="selected">Sessione selezionata sul device</option>
+        <label for="fType">Azione</label>
+        <select id="fType">
+          <option value="send_keys">Invia tasti alla sessione</option>
+          <option value="shell">Comando shell</option>
+          <option value="open_url">Apri URL</option>
+          <option value="focus_session">Vai alla sessione</option>
         </select>
-      </div>
-      <div id="aShell" class="hidden">
-        <label for="fCmd">Comando</label>
-        <textarea id="fCmd" spellcheck="false"></textarea>
-        <div class="hint">Eseguito con la shell di login (<code>zsh -lc</code> su macOS, <code>bash -lc</code> su Linux) su questo computer.</div>
-        <label for="fTimeout">Timeout (secondi)</label>
-        <input type="number" id="fTimeout" min="1" max="600" value="10">
-      </div>
-      <div id="aUrl" class="hidden">
-        <label for="fUrl">URL</label>
-        <input type="text" id="fUrl" placeholder="https://…">
-      </div>
-      <div id="aFocus" class="hidden">
-        <label for="fMatch">Nome o progetto contiene</label>
-        <input type="text" id="fMatch" placeholder="Es. hldoctor">
-        <div class="hint">Viene portata in primo piano la prima sessione che corrisponde (maiuscole e minuscole indifferenti).</div>
-      </div>
 
-      <div class="error" id="formError"></div>
-      <div class="row" style="margin-top:12px">
-        <button class="primary" id="saveBtn">Salva</button>
-        <button id="cancelBtn">Annulla</button>
-      </div>
-    </section>
+        <div id="aSend">
+          <label>Tasti rapidi</label>
+          <div class="chips" id="chips"></div>
+          <label for="fText">Testo da inviare</label>
+          <textarea id="fText" spellcheck="false"></textarea>
+          <div class="hint">Sequenze di escape: <code>\e</code> Esc, <code>\r</code> Invio, <code>\n</code> a capo, <code>\t</code> Tab, <code>\x03</code> Ctrl+C, <code>\\</code> barra inversa.</div>
+          <label for="fTarget">Destinazione</label>
+          <select id="fTarget">
+            <option value="current">Sessione in primo piano (terminale o VS Code)</option>
+            <option value="selected">Sessione selezionata sul device</option>
+          </select>
+        </div>
+        <div id="aShell" class="hidden">
+          <label for="fCmd">Comando</label>
+          <textarea id="fCmd" spellcheck="false"></textarea>
+          <div class="hint">Eseguito con la shell di login (<code>zsh -lc</code> su macOS, <code>bash -lc</code> su Linux) su questo computer.</div>
+          <label for="fTimeout">Timeout (secondi)</label>
+          <input type="number" id="fTimeout" min="1" max="600" value="10">
+        </div>
+        <div id="aUrl" class="hidden">
+          <label for="fUrl">URL</label>
+          <input type="text" id="fUrl" placeholder="https://…">
+        </div>
+        <div id="aFocus" class="hidden">
+          <label for="fMatch">Nome o progetto contiene</label>
+          <input type="text" id="fMatch" placeholder="Es. hldoctor">
+          <div class="hint">Viene portata in primo piano la prima sessione che corrisponde (maiuscole e minuscole indifferenti).</div>
+        </div>
+
+        <div class="error" id="formError"></div>
+        <div class="row" style="margin-top:14px">
+          <button class="primary" id="saveBtn" data-ledlabel="Salva">Salva</button>
+          <button id="cancelBtn">Annulla</button>
+        </div>
+      </section>
+    </div>
   </div>
 </div>
 
 <script>
 "use strict";
+/*led:begin*/
+const LED = {"font":{"A":".###.|#...#|#...#|#####|#...#|#...#|#...#","B":"####.|#...#|#...#|####.|#...#|#...#|####.","C":".####|#....|#....|#....|#....|#....|.####","D":"####.|#...#|#...#|#...#|#...#|#...#|####.","E":"#####|#....|#....|####.|#....|#....|#####","F":"#####|#....|#....|####.|#....|#....|#....","G":".####|#....|#....|#.###|#...#|#...#|.####","H":"#...#|#...#|#...#|#####|#...#|#...#|#...#","I":".###.|..#..|..#..|..#..|..#..|..#..|.###.","J":"..###|...#.|...#.|...#.|...#.|#..#.|.##..","K":"#...#|#..#.|#.#..|##...|#.#..|#..#.|#...#","L":"#....|#....|#....|#....|#....|#....|#####","M":"#...#|##.##|#.#.#|#.#.#|#...#|#...#|#...#","N":"#...#|##..#|#.#.#|#..##|#...#|#...#|#...#","O":".###.|#...#|#...#|#...#|#...#|#...#|.###.","P":"####.|#...#|#...#|####.|#....|#....|#....","Q":".###.|#...#|#...#|#...#|#.#.#|#..#.|.##.#","R":"####.|#...#|#...#|####.|#.#..|#..#.|#...#","S":".####|#....|#....|.###.|....#|....#|####.","T":"#####|..#..|..#..|..#..|..#..|..#..|..#..","U":"#...#|#...#|#...#|#...#|#...#|#...#|.###.","V":"#...#|#...#|#...#|#...#|#...#|.#.#.|..#..","W":"#...#|#...#|#...#|#.#.#|#.#.#|##.##|#...#","X":"#...#|#...#|.#.#.|..#..|.#.#.|#...#|#...#","Y":"#...#|#...#|.#.#.|..#..|..#..|..#..|..#..","Z":"#####|....#|...#.|..#..|.#...|#....|#####","0":".###.|#...#|#..##|#.#.#|##..#|#...#|.###.","1":"..#..|.##..|..#..|..#..|..#..|..#..|.###.","2":".###.|#...#|....#|...#.|..#..|.#...|#####","3":"####.|....#|....#|.###.|....#|....#|####.","4":"...#.|..##.|.#.#.|#..#.|#####|...#.|...#.","5":"#####|#....|####.|....#|....#|#...#|.###.","6":".###.|#....|#....|####.|#...#|#...#|.###.","7":"#####|....#|...#.|..#..|.#...|.#...|.#...","8":".###.|#...#|#...#|.###.|#...#|#...#|.###.","9":".###.|#...#|#...#|.####|....#|....#|.###."," ":".....|.....|.....|.....|.....|.....|.....",".":".....|.....|.....|.....|.....|.##..|.##..",",":".....|.....|.....|.....|.##..|..#..|.#...",":":".....|.##..|.##..|.....|.##..|.##..|.....",";":".....|.##..|.##..|.....|.##..|..#..|.#...","-":".....|.....|.....|#####|.....|.....|.....","_":".....|.....|.....|.....|.....|.....|#####","/":"....#|....#|...#.|..#..|.#...|#....|#....","\\":"#....|#....|.#...|..#..|...#.|....#|....#","?":".###.|#...#|....#|...#.|..#..|.....|..#..","!":"..#..|..#..|..#..|..#..|..#..|.....|..#..","'":"..#..|..#..|.#...|.....|.....|.....|.....","\"":".#.#.|.#.#.|.#.#.|.....|.....|.....|.....","(":"...#.|..#..|.#...|.#...|.#...|..#..|...#.",")":".#...|..#..|...#.|...#.|...#.|..#..|.#...","+":".....|..#..|..#..|#####|..#..|..#..|.....","=":".....|.....|#####|.....|#####|.....|.....","%":"##..#|##..#|...#.|..#..|.#...|#..##|#..##","#":".#.#.|.#.#.|#####|.#.#.|#####|.#.#.|.#.#.","@":".###.|#...#|#.###|#.#.#|#.###|#....|.###.","&":".##..|#..#.|#.#..|.#...|#.#.#|#..#.|.##.#","*":".....|#.#.#|.###.|#####|.###.|#.#.#|.....","<":"...#.|..#..|.#...|#....|.#...|..#..|...#.",">":".#...|..#..|...#.|....#|...#.|..#..|.#...","[":".###.|.#...|.#...|.#...|.#...|.#...|.###.","]":".###.|...#.|...#.|...#.|...#.|...#.|.###.","·":".....|.....|.....|..#..|.....|.....|.....","$":"..#..|.####|#.#..|.###.|..#.#|####.|..#..","□":"#####|#...#|#...#|#...#|#...#|#...#|#####","À":".#...|..#..|.###.|#...#|#...#|#####|#...#|#...#|#...#","È":".#...|..#..|#####|#....|#....|####.|#....|#....|#####","É":"..#..|.#...|#####|#....|#....|####.|#....|#....|#####","Ì":".#...|..#..|.###.|..#..|..#..|..#..|..#..|..#..|.###.","Ò":".#...|..#..|.###.|#...#|#...#|#...#|#...#|#...#|.###.","Ù":".#...|..#..|#...#|#...#|#...#|#...#|#...#|#...#|.###."},"icons":{"esc":"...........|...#.......|..##.......|.#########.|..##.....#.|...#.....#.|.........#.|........#..|...#####...|...........|...........","enter":"...........|.........#.|.........#.|.........#.|...#.....#.|..##.....#.|.#########.|..##.......|...#.......|...........|...........","stop":"...#####...|..#.....#..|.#.......#.|#.........#|#..#####..#|#..#####..#|#..#####..#|#.........#|.#.......#.|..#.....#..|...#####...","mode":"...........|........#..|.........#.|####...####|....#.#..#.|.....#..#..|....#.#..#.|####...####|.........#.|........#..|...........","tab":"...........|...........|..........#|......#...#|.......#..#|.########.#|.......#..#|......#...#|..........#|...........|...........","up":"...........|.....#.....|....###....|...#.#.#...|..#..#..#..|.....#.....|.....#.....|.....#.....|.....#.....|.....#.....|...........","down":"...........|.....#.....|.....#.....|.....#.....|.....#.....|.....#.....|..#..#..#..|...#.#.#...|....###....|.....#.....|...........","rocket":".....#.....|....###....|...#####...|...##.##...|...#####...|...#####...|..#######..|..##.#.##..|.....#.....|....#.#....|...........","book":"...........|.####.####.|#....#....#|#.##.#.##.#|#....#....#|#.##.#.##.#|#....#....#|#.##.#.##.#|#....#....#|.####.####.|...........","bolt":".......###.|......###..|.....###...|....###....|...#######.|....###....|...###.....|..###......|.###.......|.##........|...........","terminal":"...........|###########|#.........#|#.#.......#|#..#......#|#...#.....#|#..#......#|#.#..###..#|#.........#|###########|...........","refresh":"...####.###|.##......#.|.#.........|#.........#|#.........#|#.........#|#.........#|.#.......#.|.##.....##.|...#####...|...........","play":"...........|..#........|..###......|..#####....|..#######..|..########.|..#######..|..#####....|..###......|..#........|...........","check":"...........|...........|.........##|........##.|.......##..|#.....##...|##...##....|.##.##.....|..###......|...#.......|..........."},"mascot":".......##.......|.......##.......|..############..|..############..|..############..|###..........###|###.###..###.###|###..........###|..############..|..###.#.#.####..|..############..|.....######.....|..####....####..|..############..","terminal":"................|.##############.|.#............#.|.#..#.........#.|.#...#........#.|.#....#.......#.|.#...#........#.|.#..#...####..#.|.#............#.|.#............#.|.##############.|......####......|....########....|................"};
+const LEDC = { amber: "#ffb000", amberDim: "#6b4a00", led: "#e8eefc", mid: "rgba(232,238,252,.62)", low: "rgba(232,238,252,.32)",
+  magenta: "#ff2e88", ok: "#36e07a", err: "#ff4033", unlit: "#1d1a14" };
+const LEDNS = "http://www.w3.org/2000/svg";
+const ledPatterns = new Map();
+// A dot pattern per ink colour, defined once in a hidden <svg>; lit pixels are one <path> filled with it.
+function ledPattern(color) {
+  let id = ledPatterns.get(color);
+  if (id) return id;
+  id = "led" + ledPatterns.size;
+  let defs = document.getElementById("ledDefs");
+  if (!defs) {
+    const root = document.createElementNS(LEDNS, "svg");
+    root.setAttribute("width", "0"); root.setAttribute("height", "0"); root.setAttribute("aria-hidden", "true");
+    root.style.position = "absolute";
+    defs = document.createElementNS(LEDNS, "defs"); defs.id = "ledDefs";
+    root.append(defs); document.body.prepend(root);
+  }
+  const pat = document.createElementNS(LEDNS, "pattern");
+  pat.id = id; pat.setAttribute("width", "1"); pat.setAttribute("height", "1"); pat.setAttribute("patternUnits", "userSpaceOnUse");
+  const dot = document.createElementNS(LEDNS, "circle");
+  dot.setAttribute("cx", ".5"); dot.setAttribute("cy", ".5"); dot.setAttribute("r", ".43"); dot.setAttribute("fill", color);
+  pat.append(dot); defs.append(pat); ledPatterns.set(color, id);
+  return id;
+}
+function ledGlyph(ch) {
+  return (LED.font[ch] || LED.font[ch.toUpperCase()] || LED.font["□"]).split("|");
+}
+const ledMemo = new Map();
+// Layout in cell units (cached by string): { d, w, top, h }. Accented capitals (9 rows) rise above the cap line.
+function ledLayout(str, gap = 1) {
+  const key = gap + "\u0001" + str;
+  let L = ledMemo.get(key);
+  if (L) return L;
+  let d = "", x = 0, top = 0;
+  const chars = Array.from(String(str).replace(/[‘’`]/g, "'").replace(/[“”]/g, '"'));
+  for (const ch of chars) {
+    const g = ledGlyph(ch), dy = 7 - g.length;
+    top = Math.min(top, dy);
+    g.forEach((row, y) => {
+      for (let c = 0; c < row.length; c++) {
+        if (row[c] !== "#") continue;
+        let w = 1;
+        while (row[c + w] === "#") w++;
+        d += `M${x + c} ${y + dy}h${w}v1h-${w}z`;
+        c += w - 1;
+      }
+    });
+    x += 6 + gap - 1;
+  }
+  L = { d, w: Math.max(0, x - gap), top, h: 7 - top };
+  ledMemo.set(key, L);
+  return L;
+}
+const ledWidth = (str, gap = 1) => ledLayout(str, gap).w;
+function ledBitmapLayout(bitmap) {
+  let L = ledMemo.get(bitmap);
+  if (L) return L;
+  const rows = bitmap.split("|");
+  let d = "";
+  rows.forEach((row, y) => {
+    for (let c = 0; c < row.length; c++) {
+      if (row[c] !== "#") continue;
+      let w = 1;
+      while (row[c + w] === "#") w++;
+      d += `M${c} ${y}h${w}v1h-${w}z`;
+      c += w - 1;
+    }
+  });
+  L = { d, w: rows[0].length, top: 0, h: rows.length };
+  ledMemo.set(bitmap, L);
+  return L;
+}
+// cell: number (px) or any CSS length. fit: scale down with the container instead of a fixed size.
+function ledSvg(L, o) {
+  const cell = o.cell ?? 2, u = typeof cell === "number" ? cell + "px" : cell;
+  const svg = document.createElementNS(LEDNS, "svg");
+  svg.setAttribute("viewBox", `0 ${L.top} ${L.w} ${L.h}`);
+  svg.setAttribute("aria-hidden", "true");
+  svg.classList.add("led");
+  svg.style.width = `calc(${L.w} * ${u})`;
+  svg.style.height = `calc(${L.h} * ${u})`;
+  if (o.fit) { svg.style.maxWidth = "100%"; svg.style.height = "auto"; }
+  if (o.fill) { svg.style.width = "auto"; svg.style.height = "100%"; svg.style.maxHeight = `calc(${L.h} * ${u})`; svg.style.maxWidth = "100%"; }
+  const back = document.createElementNS(LEDNS, "rect");
+  back.setAttribute("x", "0"); back.setAttribute("y", String(L.top)); back.setAttribute("width", String(L.w)); back.setAttribute("height", String(L.h));
+  back.setAttribute("fill", `url(#${ledPattern(LEDC.unlit)})`);
+  // Ink on a lit control (black on a filled button) has no unlit backing.
+  if (!o.bare && o.color !== "#000") svg.append(back);
+  const p = document.createElementNS(LEDNS, "path");
+  p.setAttribute("d", L.d);
+  p.setAttribute("fill", `url(#${ledPattern(o.color || LEDC.led)})`);
+  svg.append(p);
+  return svg;
+}
+const ledText = (str, o = {}) => ledSvg(ledLayout(str, o.gap ?? 1), o);
+const ledBitmap = (bitmap, o = {}) => ledSvg(ledBitmapLayout(bitmap), o);
+const ledGlyphIcon = (name, o = {}) => ledBitmap(LED.icons[name] || LED.icons.terminal, o);
+
+// One display line. long=true: scrolls like a ticker when wider than its box (see ledMeasure).
+// o.base + o.avail (both in cqw): shrink the cell so the string fits avail, never below 0.72 x base; the ticker covers the rest.
+function ledLine(str, o = {}) {
+  if (o.base && o.avail) {
+    const c = Math.max(o.base * 0.72, Math.min(o.base, o.avail / Math.max(1, ledWidth(str))));
+    o = { ...o, cell: c.toFixed(3) + "cqw" };
+  }
+  const box = document.createElement("div");
+  box.className = "mq";
+  const inner = document.createElement("div");
+  inner.className = "mqi";
+  inner.append(ledText(str, o));
+  box.append(inner);
+  box.dataset.cols = ledWidth(str);
+  return box;
+}
+// Measure once per render, then start the ticker only on the lines that overflow.
+function ledMeasure(root = document) {
+  const boxes = Array.from(root.querySelectorAll(".mq"));
+  const m = boxes.map((b) => {
+    const svg = b.firstChild.firstChild, cols = +b.dataset.cols || 1;
+    return { b, over: svg.getBoundingClientRect().width - b.clientWidth, cell: svg.getBoundingClientRect().width / cols };
+  });
+  for (const { b, over, cell } of m) {
+    const run = over > 1 && cell > 0;
+    b.classList.toggle("scroll", run);
+    if (!run) continue;
+    const steps = Math.ceil(over / cell) + 2;
+    b.style.setProperty("--steps", steps);
+    b.style.setProperty("--shift", `${-steps * cell}px`);
+    b.style.setProperty("--dur", `${(steps * 0.14 + 2.6).toFixed(2)}s`);
+  }
+}
+
+// Action tile (shared by the device and the admin): glyph, emoji or image icon + label.
+function ledActionTile(b) {
+  const tile = document.createElement("button");
+  tile.type = "button";
+  tile.className = "tile act";
+  tile.setAttribute("aria-label", b.title || "");
+  const cq = document.createElement("div"), inn = document.createElement("div"), ico = document.createElement("div");
+  cq.className = "cq"; inn.className = "in"; ico.className = "ico";
+  const ink = b.color || LEDC.led;
+  if (b.color) { tile.style.setProperty("--c", b.color); tile.classList.add("tinted"); }
+  const icon = b.icon || {};
+  if (icon.type === "image" && icon.value) {
+    const sq = document.createElement("div"), img = document.createElement("img");
+    sq.className = "sq"; img.src = "/" + icon.value; img.alt = "";
+    sq.append(img); ico.append(sq);
+  } else if (icon.type === "emoji") {
+    const sq = document.createElement("div");
+    sq.className = "sq"; sq.textContent = icon.value || ""; ico.append(sq);
+  } else ico.append(ledGlyphIcon(icon.value, { cell: "calc(100cqw / 25)", color: ink, fill: true }));
+  const lbl = document.createElement("div");
+  lbl.className = "lbl";
+  lbl.append(ledLine((b.title || "").toUpperCase(), { base: 2, avail: 88, color: ink }));
+  inn.append(ico, lbl); cq.append(inn); tile.append(cq);
+  return tile;
+}
+/*led:end*/
+
 const $ = (id) => document.getElementById(id);
 const ACTION_LABEL = { send_keys: "Invia tasti", shell: "Comando shell", open_url: "Apri URL", focus_session: "Vai alla sessione" };
 let buttons = [];
 let editing = null;        // button id, or "" for new, or null when closed
-let iconType = "emoji";
+let iconType = "glyph";
+let glyphValue = "bolt";
 let uploadedPath = "";     // image path already stored for the current editor
 const confirming = new Set();
 const testResults = new Map();
+
+// ---- dot-matrix headings, primary-button labels, brand
+function ledHeading(h, text) {
+  h.replaceChildren();
+  const sr = document.createElement("span");
+  sr.className = "sr"; sr.textContent = text;
+  h.append(sr, ledText(text.toUpperCase(), { cell: 2, color: LEDC.led }));
+}
+document.querySelectorAll("[data-led]").forEach((h) => ledHeading(h, h.dataset.led));
+function ledLabel(b, text) {
+  b.setAttribute("aria-label", text);
+  b.replaceChildren(ledText(text.toUpperCase(), { cell: b.classList.contains("small") ? 1.9 : 2.4, color: "#000" }));
+}
+document.querySelectorAll("[data-ledlabel]").forEach((b) => ledLabel(b, b.dataset.ledlabel));
+$("brand").append(ledText("NEONDECK", { cell: 3, color: LEDC.magenta }));
+$("brandSub").append(ledText("ADMIN", { cell: 2, color: LEDC.led }));
+
+// ---- small authored SVG icons (24 grid, 1.5 stroke)
+const SVGICONS = {
+  up: "M6 15l6-6 6 6", down: "M6 9l6 6 6-6",
+  edit: "M4 20h4L19 9l-4-4L4 16zM13 7l4 4",
+  del: "M5 7h14M10 7V5h4v2M7 7l1 12h8l1-12M10 11v5M14 11v5",
+  test: "M8 5l11 7-11 7z",
+};
+function svgIcon(name) {
+  const s = document.createElementNS(LEDNS, "svg");
+  s.setAttribute("viewBox", "0 0 24 24"); s.setAttribute("aria-hidden", "true");
+  const p = document.createElementNS(LEDNS, "path");
+  p.setAttribute("d", SVGICONS[name]); s.append(p);
+  return s;
+}
+function iconButton(name, label, onclick, extra) {
+  const b = mk("button", "ib" + (extra ? " " + extra : ""));
+  b.type = "button"; b.title = label; b.setAttribute("aria-label", label);
+  b.append(svgIcon(name));
+  b.onclick = onclick;
+  return b;
+}
+function gripIcon() {
+  const s = document.createElementNS(LEDNS, "svg");
+  s.setAttribute("viewBox", "0 0 14 18"); s.setAttribute("aria-hidden", "true");
+  for (const y of [3, 9, 15]) for (const x of [4, 10]) {
+    const c = document.createElementNS(LEDNS, "circle");
+    c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", "1.6"); s.append(c);
+  }
+  return s;
+}
+function setLamp(e, cls, text) {
+  e.className = "lamp " + cls;
+  e.replaceChildren(document.createElement("i"), mk("span", "", text));
+}
 
 // The admin key arrives in the URL hash from `neondeck admin`; keep it only in sessionStorage.
 let adminKey = "";
@@ -334,27 +603,15 @@ function escapeText(s) {
   }
   return out;
 }
-
-// ---- tile rendering (shared by list and editor)
-function fillTile(tile, icon, title, color) {
-  tile.style.setProperty("--c", color || "#444");
-  tile.classList.toggle("tinted", !!color);
-  const ic = tile.querySelector(".ic");
-  ic.replaceChildren();
-  if (icon.type === "image" && icon.value) {
-    const img = document.createElement("img");
-    img.src = "/" + icon.value; img.alt = "";
-    ic.append(img);
-  } else ic.textContent = icon.value || "";
-  tile.querySelector(".t").textContent = title || "";
-}
-function makeTile(b, small) {
-  const t = mk("div", "tile" + (small ? " sm" : ""));
-  const inner = mk("div", "in");
-  inner.append(mk("div", "ic"), mk("div", "t"));
-  t.append(inner);
-  fillTile(t, b.icon, b.title, b.color);
-  return t;
+// ---- tile rendering: the very same tile as the device
+function makeTile(b, cls) {
+  const t = ledActionTile(b);
+  t.tabIndex = -1;
+  t.setAttribute("aria-hidden", "true");
+  const wrap = mk("div", cls);
+  wrap.append(t);
+  requestAnimationFrame(() => ledMeasure(wrap));
+  return wrap;
 }
 
 function summary(b) {
@@ -374,30 +631,27 @@ function renderList() {
     const item = mk("div", "item");
     item.draggable = true;
     item.dataset.i = i;
-    item.append(mk("span", "handle", "⠿"), makeTile(b, true));
+    const grip = mk("span", "handle"); grip.append(gripIcon());
+    item.append(grip, makeTile(b, "mini"));
     const meta = mk("div", "meta");
     meta.append(mk("b", "", b.title), mk("span", "", summary(b)));
     item.append(meta);
 
-    const up = mk("button", "small", "↑"); up.title = "Sposta su"; up.disabled = i === 0;
-    up.onclick = () => move(i, i - 1);
-    const dn = mk("button", "small", "↓"); dn.title = "Sposta giù"; dn.disabled = i === buttons.length - 1;
-    dn.onclick = () => move(i, i + 1);
-    const test = mk("button", "small", "Prova"); test.onclick = () => testButton(b);
-    const edit = mk("button", "small", "Modifica"); edit.onclick = () => openEditor(b);
-    item.append(up, dn, test, edit);
+    const ctl = mk("div", "ctl");
+    const up = iconButton("up", "Sposta su", () => move(i, i - 1)); up.disabled = i === 0;
+    const dn = iconButton("down", "Sposta giù", () => move(i, i + 1)); dn.disabled = i === buttons.length - 1;
+    ctl.append(up, dn, iconButton("test", "Prova", () => testButton(b)), iconButton("edit", "Modifica", () => openEditor(b)));
 
     if (confirming.has(b.id)) {
       const yes = mk("button", "small danger", "Elimina");
       yes.onclick = async () => { confirming.delete(b.id); await remove(b.id); };
       const no = mk("button", "small", "Annulla");
       no.onclick = () => { confirming.delete(b.id); renderList(); };
-      item.append(mk("span", "muted", "Sicuro?"), yes, no);
+      ctl.append(mk("span", "muted", "Sicuro?"), yes, no);
     } else {
-      const del = mk("button", "small danger", "Elimina");
-      del.onclick = () => { confirming.add(b.id); renderList(); };
-      item.append(del);
+      ctl.append(iconButton("del", "Elimina", () => { confirming.add(b.id); renderList(); }, "danger"));
     }
+    item.append(ctl);
 
     item.addEventListener("dragstart", (e) => { item.classList.add("drag"); e.dataTransfer.setData("text/plain", String(i)); e.dataTransfer.effectAllowed = "move"; });
     item.addEventListener("dragend", () => item.classList.remove("drag"));
@@ -445,7 +699,7 @@ async function testButton(b) {
 }
 
 // ---- editor
-const CHIPS = [["Esc", "\\e"], ["Invio", "\\r"], ["Ctrl+C", "\\x03"], ["Shift+Tab", "\\e[Z"], ["Tab", "\\t"], ["↑", "\\e[A"], ["↓", "\\e[B"]];
+const CHIPS = [["Esc", "\\e"], ["Invio", "\\r"], ["Ctrl+C", "\\x03"], ["Shift+Tab", "\\e[Z"], ["Tab", "\\t"], ["Su", "\\e[A"], ["Giù", "\\e[B"]];
 for (const [label, seq] of CHIPS) {
   const c = mk("button", "", label); c.type = "button";
   c.onclick = () => {
@@ -457,9 +711,22 @@ for (const [label, seq] of CHIPS) {
   $("chips").append(c);
 }
 
+function renderGlyphs() {
+  const box = $("iconGlyph");
+  box.replaceChildren();
+  for (const name of Object.keys(LED.icons)) {
+    const g = mk("button", name === glyphValue ? "on" : "");
+    g.type = "button"; g.title = name; g.setAttribute("aria-label", name); g.setAttribute("aria-pressed", name === glyphValue);
+    g.append(ledGlyphIcon(name, { cell: 2.2, color: LEDC.led }));
+    g.onclick = () => { glyphValue = name; renderGlyphs(); updatePreview(); };
+    box.append(g);
+  }
+}
+
 function setIconTab(t) {
   iconType = t;
   document.querySelectorAll("#iconTabs button").forEach((b) => b.classList.toggle("on", b.dataset.t === t));
+  $("iconGlyph").classList.toggle("hidden", t !== "glyph");
   $("iconEmoji").classList.toggle("hidden", t !== "emoji");
   $("iconImage").classList.toggle("hidden", t !== "image");
   $("imgHint").classList.toggle("hidden", t !== "image");
@@ -477,10 +744,15 @@ function setActionUi() {
 $("fType").onchange = setActionUi;
 
 function currentIcon() {
+  if (iconType === "glyph") return { type: "glyph", value: glyphValue };
   return iconType === "emoji" ? { type: "emoji", value: $("fEmoji").value.trim() } : { type: "image", value: uploadedPath };
 }
 function currentColor() { return $("fNoColor").checked ? undefined : $("fColor").value; }
-function updatePreview() { fillTile($("tilePreview"), currentIcon(), $("fTitle").value.trim() || "Titolo", currentColor()); }
+function updatePreview() {
+  const pv = $("tilePreview");
+  pv.replaceChildren(makeTile({ icon: currentIcon(), title: $("fTitle").value.trim() || "Titolo", color: currentColor() }, "").firstChild);
+  requestAnimationFrame(() => ledMeasure(pv));
+}
 ["fTitle", "fEmoji", "fColor", "fNoColor"].forEach((id) => ($(id).oninput = updatePreview));
 $("fNoColor").onchange = updatePreview;
 
@@ -502,10 +774,11 @@ function showFormError(m) { $("formError").textContent = m; }
 
 function openEditor(b) {
   editing = b ? b.id : "";
-  $("editorTitle").textContent = b ? "Modifica pulsante" : "Nuovo pulsante";
+  ledHeading($("editorTitle"), b ? "Modifica pulsante" : "Nuovo pulsante");
   const a = b ? b.action : { type: "send_keys", text: "", target: "current" };
   $("fTitle").value = b ? b.title : "";
   $("fEmoji").value = b && b.icon.type === "emoji" ? b.icon.value : "";
+  glyphValue = b && b.icon.type === "glyph" ? b.icon.value : "bolt";
   uploadedPath = b && b.icon.type === "image" ? b.icon.value : "";
   $("fileName").textContent = uploadedPath ? "(immagine attuale)" : "";
   $("fFile").value = "";
@@ -520,7 +793,8 @@ function openEditor(b) {
   $("fMatch").value = a.match || "";
   showFormError("");
   setActionUi();
-  setIconTab(b ? b.icon.type : "emoji");
+  renderGlyphs();
+  setIconTab(b ? b.icon.type : "glyph");
   $("editor").classList.remove("hidden");
   $("fTitle").focus();
 }
@@ -542,7 +816,7 @@ function collect() {
 $("saveBtn").onclick = async () => {
   showFormError("");
   const data = collect();
-  if (data.icon.type === "image" && !data.icon.value) { showFormError("Carica un'immagine oppure scegli un'emoji"); return; }
+  if (data.icon.type === "image" && !data.icon.value) { showFormError("Carica un'immagine oppure scegli un simbolo o un'emoji"); return; }
   try {
     if (editing) {
       const r = await api("PUT", "/api/admin/buttons/" + editing, data);
@@ -669,15 +943,22 @@ function makeQR(text) {
   }
   return m;
 }
-
+// Modules drawn as round white LEDs on black (quiet zone black)
 function drawQR(canvas, text) {
-  const m = makeQR(text), n = m.length, quiet = 4;
-  const scale = Math.floor(canvas.width / (n + 2 * quiet));
-  const off = Math.floor((canvas.width - n * scale) / 2);
+  const m = makeQR(text), n = m.length, quiet = 3;
+  const dpr = Math.max(1, window.devicePixelRatio || 1), css = 240;
+  canvas.width = canvas.height = Math.round(css * dpr);
+  const scale = canvas.width / (n + 2 * quiet);
   const g = canvas.getContext("2d");
-  g.fillStyle = "#fff"; g.fillRect(0, 0, canvas.width, canvas.height);
-  g.fillStyle = "#000";
-  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (m[r][c]) g.fillRect(off + c * scale, off + r * scale, scale, scale);
+  g.fillStyle = "#000"; g.fillRect(0, 0, canvas.width, canvas.height);
+  g.fillStyle = LEDC.led;
+  g.beginPath();
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (m[r][c]) {
+    const x = (quiet + c + 0.5) * scale, y = (quiet + r + 0.5) * scale;
+    g.moveTo(x + scale * 0.46, y);
+    g.arc(x, y, scale * 0.46, 0, Math.PI * 2);
+  }
+  g.fill();
 }
 
 // ---- device info
@@ -721,15 +1002,16 @@ let netEditing = false;
 function renderNetworks(st) {
   const cur = st.current;
   $("netCurName").textContent = cur.name || "Rete sconosciuta";
-  const pill = $("netPill");
-  pill.className = "pill " + (cur.mac ? (cur.trusted ? "ok" : "") : "err");
-  pill.textContent = cur.mac ? (cur.trusted ? "Fidata" : "Non fidata") : "Non riconoscibile";
+  setLamp($("netPill"), cur.mac ? (cur.trusted ? "ok" : "warn") : "err", cur.mac ? (cur.trusted ? "Fidata" : "Non fidata") : "Non riconoscibile");
   $("netReason").textContent = cur.reason || "";
   $("netGw").textContent = cur.gateway || "-";
   $("netMac").textContent = cur.mac || "-";
   $("netSubnet").textContent = cur.subnet || "-";
-  $("netLan").textContent = st.lan.listening ? `Accesso dalla rete attivo su ${st.lan.ip}:${st.lan.port}` : "Accesso dalla rete disattivato";
-  $("netBonjour").textContent = st.bonjour === null ? "-" : st.bonjour ? "Attivo" : "Non attivo (permesso Rete locale?)";
+  const lan = $("netLan");
+  setLamp(lan, st.lan.listening ? "ok" : "", st.lan.listening ? `Accesso dalla rete attivo su ${st.lan.ip}:${st.lan.port}` : "Accesso dalla rete disattivato");
+  const bj = $("netBonjour");
+  if (st.bonjour === null) { bj.className = ""; bj.textContent = "-"; }
+  else setLamp(bj, st.bonjour ? "ok" : "warn", st.bonjour ? "Attivo" : "Non attivo (permesso Rete locale?)");
   $("netTrustBox").classList.toggle("hidden", !(cur.mac && !cur.trusted));
 
   if (netEditing) return;  // do not clobber an edit or a pending confirmation with the periodic refresh
@@ -754,7 +1036,7 @@ function renderNetworks(st) {
     name.onkeydown = (e) => { if (e.key === "Enter") name.blur(); else if (e.key === "Escape") { name.value = saved; name.blur(); } };
     meta.append(name, mk("span", "mono", `${n.mac} · ${n.subnet || "-"} · aggiunta il ${n.added || "?"}`));
     row.append(meta);
-    if (cur.mac && cur.mac === n.mac) row.append(mk("span", "pill ok", "attuale"));
+    if (cur.mac && cur.mac === n.mac) { const l = mk("span"); setLamp(l, "ok", "attuale"); row.append(l); }
     const del = mk("button", "small danger", "Rimuovi");
     del.onclick = () => {
       netEditing = true;

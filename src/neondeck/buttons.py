@@ -10,17 +10,21 @@ from typing import Awaitable, Callable
 
 from . import platform
 from .config import atomic_write_json
+from .ledfont import ICON_NAMES
 
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 ICON_RE = re.compile(r"^icons/[A-Za-z0-9_-]+\.(png|jpg|jpeg|gif|webp|svg)$")
 ACTION_TYPES = ("send_keys", "shell", "open_url", "focus_session")
 
+# (title, LED glyph, keys)
 DEFAULTS = [
-    ("Esc", "⎋", "\u001b"),
-    ("Invio", "↵", "\r"),
-    ("Interrompi", "🛑", "\u0003"),
-    ("Cambia modalità", "🔀", "\u001b[Z"),
+    ("Esc", "esc", "\u001b"),
+    ("Invio", "enter", "\r"),
+    ("Interrompi", "stop", "\u0003"),
+    ("Cambia modalità", "mode", "\u001b[Z"),
 ]
+# Emoji the default buttons used before the LED glyphs: a button that still matches one of these is upgraded on load.
+LEGACY_DEFAULTS = {("Esc", "⎋"): "esc", ("Invio", "↵"): "enter", ("Interrompi", "🛑"): "stop", ("Cambia modalità", "🔀"): "mode"}
 
 
 class ValidationError(ValueError):
@@ -38,6 +42,9 @@ def validate_button(raw: dict, keep_id: str | None = None) -> dict:
     if itype == "emoji":
         if len(ivalue) > 16:
             raise ValidationError("Icona emoji troppo lunga")
+    elif itype == "glyph":
+        if ivalue not in ICON_NAMES:
+            raise ValidationError("Simbolo LED non valido")
     elif itype == "image":
         if not ICON_RE.match(ivalue):
             raise ValidationError("Percorso immagine non valido")
@@ -101,6 +108,8 @@ class ButtonStore:
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
             self.buttons = [validate_button(b, b.get("id")) for b in data]
+            if self._upgrade_legacy():
+                self._save()
             return
         except FileNotFoundError:
             pass
@@ -109,11 +118,20 @@ class ButtonStore:
             return
         self.buttons = [
             validate_button({
-                "title": t, "icon": {"type": "emoji", "value": e},
+                "title": t, "icon": {"type": "glyph", "value": e},
                 "action": {"type": "send_keys", "text": k, "target": "current"},
             }) for t, e, k in DEFAULTS
         ]
         self._save()
+
+    def _upgrade_legacy(self) -> bool:
+        changed = False
+        for b in self.buttons:
+            glyph = LEGACY_DEFAULTS.get((b["title"], b["icon"]["value"])) if b["icon"]["type"] == "emoji" else None
+            if glyph:
+                b["icon"] = {"type": "glyph", "value": glyph}
+                changed = True
+        return changed
 
     def _save(self) -> None:
         atomic_write_json(self.path, self.buttons)

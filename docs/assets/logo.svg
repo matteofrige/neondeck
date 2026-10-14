@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" shape-rendering="crispEdges" role="img" aria-label="Neondeck logo">
-<defs><filter id="glow" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
-<rect width="160" height="160" fill="#000"/>
-<g filter="url(#glow)"><path fill="#ff3cc7" d="M72 24h16v16h-16zM32 40h96v72h-96zM16 64h16v24h-16zM128 64h16v24h-16zM56 112h48v8h-48zM32 120h96v16h-96z"/><path fill="#000" d="M40 64h80v24h-80zM56 96h8v8h-8zM72 96h8v8h-8zM88 96h8v8h-8zM64 120h32v8h-32z"/><path fill="#19f0ff" d="M48 72h24v8h-24zM88 72h24v8h-24z"/></g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 160" width="160" height="160" role="img" aria-label="Neondeck logo">
+<defs><pattern id="field" width="4" height="4" patternUnits="userSpaceOnUse"><circle cx="2.0" cy="2.0" r="1.52" fill="#1d1a14"/></pattern><pattern id="p0" x="16" y="24" width="8" height="8" patternUnits="userSpaceOnUse"><circle cx="4.0" cy="4.0" r="3.44" fill="#ff2e88"/></pattern></defs>
+<rect width="160" height="160" fill="#050505"/>
+<rect width="160" height="160" fill="url(#field)"/>
+<path fill="url(#p0)" d="M72 24h16v8h-16zM72 32h16v8h-16zM32 40h96v8h-96zM32 48h96v8h-96zM32 56h96v8h-96zM16 64h24v8h-24zM120 64h24v8h-24zM16 72h24v8h-24zM48 72h24v8h-24zM88 72h24v8h-24zM120 72h24v8h-24zM16 80h24v8h-24zM120 80h24v8h-24zM32 88h96v8h-96zM32 96h24v8h-24zM64 96h8v8h-8zM80 96h8v8h-8zM96 96h32v8h-32zM32 104h96v8h-96zM56 112h48v8h-48zM32 120h32v8h-32zM96 120h32v8h-32zM32 128h96v8h-96z"/>
 </svg>

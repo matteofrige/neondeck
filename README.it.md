@@ -163,7 +163,7 @@ Tutto sta in `~/.config/neondeck/` (modificabile con `NEONDECK_HOME`; su Linux v
 <details>
 <summary><b>Schema di <code>buttons.json</code> ed esempi</b></summary>
 
-Un array di pulsanti. Ogni pulsante ha `id`, `title` (da 1 a 40 caratteri), `icon` (`{"type": "emoji", "value": "🚀"}` oppure `{"type": "image", "value": "icons/nome.png"}`), un `color` facoltativo (`#rrggbb`) e un'`action`. Il modo più semplice per modificarli è il pannello admin (`neondeck admin`), che carica anche le immagini (png, jpg, gif, webp o svg, fino a 2 MB) in `icons/`.
+Un array di pulsanti. Ogni pulsante ha `id`, `title` (da 1 a 40 caratteri), `icon` (`{"type": "glyph", "value": "rocket"}` per un simbolo LED a matrice di punti (`esc`, `enter`, `stop`, `mode`, `tab`, `up`, `down`, `rocket`, `book`, `bolt`, `terminal`, `refresh`, `play`, `check`), `{"type": "emoji", "value": "🚀"}` oppure `{"type": "image", "value": "icons/nome.png"}`), un `color` facoltativo (`#rrggbb`) e un'`action`. Il modo più semplice per modificarli è il pannello admin (`neondeck admin`), che carica anche le immagini (png, jpg, gif, webp o svg, fino a 2 MB) in `icons/`.
 
 Al primo avvio vengono creati quattro pulsanti: Esc, Invio, Interrompi (Ctrl+C) e Cambia modalità (Shift+Tab).
 
@@ -172,7 +172,7 @@ Al primo avvio vengono creati quattro pulsanti: Esc, Invio, Interrompi (Ctrl+C) 
   {
     "id": "enter",
     "title": "Invio",
-    "icon": { "type": "emoji", "value": "↵" },
+    "icon": { "type": "glyph", "value": "enter" },
     "action": { "type": "send_keys", "text": "\r", "target": "current" }
   },
   {
@@ -211,9 +211,10 @@ Al primo avvio vengono creati quattro pulsanti: Esc, Invio, Interrompi (Ctrl+C) 
 <details open>
 <summary><b>Come leggere la griglia</b></summary>
 
-- **Colore di stato.** Ambra e pulsante = *busy* (Claude sta lavorando). Verde = *idle* (aspetta te). Blu = una semplice *shell*. Le tessere dei terminali (pannelli che non eseguono Claude Code) sono ciano e attenuate finché non hanno il fuoco.
-- **Contorni.** Un contorno bianco sottile segna la sessione attualmente in primo piano sul computer; uno spesso segna la tessera selezionata sul dispositivo (la destinazione dei pulsanti `selected`).
-- **Badge dell'host.** `iT` = iTerm2, `TM` = tmux, `WZ` = WezTerm, `KT` = kitty, `VS` = VS Code / Cursor, seguito dall'etichetta di posizione.
+- **Chi aspetta te.** L'ambra ha un solo significato: una sessione Claude Code che aspetta te ("TOCCA A TE", con la scritta che lampeggia come un treno in partenza). La testata ne mostra il numero in grande, in ambra, e quelle tessere vengono ordinate per prime.
+- **Altri stati.** LED bianchi a intensità ridotta: *in corso* (sta lavorando, con tre punti che si rincorrono), *comando* (un comando shell, segnato con `$`), pannelli di terminale (icona a monitor e nome del programma in esecuzione). Le sessioni di sola visione sono attenuate; gli spazi vuoti mostrano moduli spenti. Quando una tessera cambia stato si ridisegna con una passata di LED da sinistra a destra.
+- **Contorni.** Un contorno bianco sottile segna la sessione attualmente in primo piano sul computer; un contorno magenta segna la tessera selezionata sul dispositivo (la destinazione dei pulsanti `selected`).
+- **Codice dell'host.** In basso a destra di ogni tessera: `IT2` = iTerm2, `TMX` = tmux, `WZT` = WezTerm, `KTY` = kitty, `VSC` = VS Code / Cursor.
 - **Etichetta di posizione.** iTerm2: `F1·T2` = finestra 1, scheda 2; `F1·T2·P2` aggiunge il pannello 2 quando la scheda è divisa (le finestre seguono l'ordine di iTerm2). tmux: `tmux work:2.1` = sessione `work`, finestra 2, pannello 1. WezTerm e kitty: `wezterm 1:2.1` / `kitty 1:2.1` = finestra 1, scheda 2, pannello 1.
 - **Sottotitolo.** Il tempo nello stato corrente per le tessere Claude («da 3 min»); la cartella corrente o la posizione per i terminali.
 - **Tessere non comandabili.** Le sessioni in un terminale che l'agent non può pilotare (Terminal.app o Ghostty senza tmux, una finestra VS Code senza bridge, ...) sono attenuate, mostrano «non comandabile» e non si possono selezionare.
