@@ -11,6 +11,8 @@ from neondeck import server
 from neondeck.config import load_config, save_config
 from neondeck.netguard import NetworkMonitor
 
+from conftest import FakeBackend
+
 MAC = "02:00:5e:01:02:03"
 IFS = [ipaddress.ip_interface("192.168.50.23/24")]
 
@@ -136,19 +138,38 @@ async def test_watch_idles_without_clients(tmp_path):
     task.cancel()
 
 
-async def test_refresh_passes_iterm_sessions_to_tracker(tmp_path):
-    """Regression: Context was built positionally and got front_app in iterm_sessions."""
+async def test_refresh_merges_every_backend_into_tiles(tmp_path):
+    """Regression: Context was built positionally and got front_app in the session list."""
     cfg = load_config(tmp_path)
-    c = server.Core(tmp_path, cfg)
-    sess = [{"session_id": "S1", "window": 1, "tab": 2, "pane": 1, "panes": 1, "tty": "/dev/ttys004",
-             "title": "-zsh", "job": "zsh", "path": "/Users/alice", "current": False}]
-    c.iterm.snapshot = mock.AsyncMock(return_value=("/dev/ttys004", frozenset({"/dev/ttys004"}), sess))
+    pane = {"backend": "iterm", "pane_id": "S1", "window": 1, "tab": 2, "pane": 1, "panes": 1,
+            "tty": "/dev/ttys004", "title": "-zsh", "job": "zsh", "cwd": "/Users/alice", "active": True,
+            "apps": ["iTerm2"], "loc": "F1 · T2"}
+    tmux = dict(pane, backend="tmux", pane_id="%1", tty="/dev/pts/1", apps=["alacritty"], loc="tmux main:1.1",
+                active=False)
+    c = server.Core(tmp_path, cfg, backends=[FakeBackend("iterm", "iTerm2", [pane]),
+                                             FakeBackend("tmux", "tmux", [tmux]),
+                                             FakeBackend("wezterm", "WezTerm", ok=False)])
     c.front_app = mock.AsyncMock(return_value="iTerm2")
-    with mock.patch.object(type(c.iterm), "connected", new_callable=mock.PropertyMock, return_value=True), \
-            mock.patch("neondeck.sessions._json_files", return_value=[]):
+    with mock.patch("neondeck.sessions._json_files", return_value=[]):
         await c.refresh(max_age=0)
-    ids = [t["id"] for t in c.tracker.sessions]
-    assert "iterm:S1" in ids
+    tiles = {t["id"]: t for t in c.tracker.sessions}
+    assert set(tiles) == {"iterm:S1", "tmux:%1"} and tiles["iterm:S1"]["focused"]
+    assert [t["id"] for t in c.state()["terminals"]] == ["iterm", "tmux"]
+    # show_all_terminals off: no terminal tiles
+    cfg["show_all_terminals"] = False
+    c._sig = None
+    with mock.patch("neondeck.sessions._json_files", return_value=[]):
+        await c.refresh(max_age=0)
+    assert c.tracker.sessions == []
+
+
+async def test_backends_are_asked_to_stay_connected_while_clients_are_present(tmp_path):
+    cfg = load_config(tmp_path)
+    fb = FakeBackend("iterm")
+    c = server.Core(tmp_path, cfg, backends=[fb])
+    c.add_client(mock.Mock(), "127.0.0.1")
+    c.remove_client(next(iter(c.clients)))
+    assert fb.wanted[0] == float("inf") and fb.wanted[-1] == 60
 
 
 async def test_front_app_only_when_needed(tmp_path):
@@ -172,7 +193,8 @@ async def test_admin_info_reports_network_reason_and_settings(env):
     resp = await server.admin_info(r)
     data = json.loads(resp.body)
     assert data["network_reason"] == "localnet_permission" and data["network_checked"] is True
-    assert data["show_all_iterm"] is True
+    assert data["show_all_terminals"] is True
+    assert any(b["name"] == "vscode" for b in data["backends"])
 
 
 # ---------------------------------------------------------------- admin: network management

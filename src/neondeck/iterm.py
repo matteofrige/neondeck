@@ -252,9 +252,9 @@ class ItermClient:
         return app, found.get(tty)
 
     async def snapshot(self, details: bool = False) -> tuple[str | None, frozenset[str], list[dict]]:
-        """One scan: (tty of iTerm's current session, ttys of all sessions, session details).
+        """One scan: (tty of iTerm's current session, ttys of all sessions, session list).
 
-        Details (position, title, job, cwd) are only gathered when asked for.
+        Job and cwd need one RPC per session and are only gathered when details are asked for.
         """
         if self._conn is None:
             return None, frozenset(), []
@@ -269,15 +269,14 @@ class ItermClient:
             cur = tab.current_session if tab else None
             current = await self._tty(cur) if cur else None
             sessions = []
-            if details:
-                for wi, ti, pi, n, s in lay:
-                    v = self._vars.get(s.session_id, {})
-                    sessions.append({
-                        "session_id": s.session_id, "window": wi, "tab": ti, "pane": pi, "panes": n,
-                        "tty": self._tty_by_sid.get(s.session_id), "title": s.name or None,
-                        "job": v.get("job"), "path": v.get("path"),
-                        "current": cur is not None and s.session_id == cur.session_id,
-                    })
+            for wi, ti, pi, n, s in lay:
+                v = self._vars.get(s.session_id, {})
+                sessions.append({
+                    "session_id": s.session_id, "window": wi, "tab": ti, "pane": pi, "panes": n,
+                    "tty": self._tty_by_sid.get(s.session_id), "title": s.name or None,
+                    "job": v.get("job"), "path": v.get("path"),
+                    "current": cur is not None and s.session_id == cur.session_id,
+                })
             return current, frozenset(found), sessions
         except Exception as exc:
             log.debug("scansione iTerm2 fallita: %r", exc)

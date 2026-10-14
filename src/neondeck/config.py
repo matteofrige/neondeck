@@ -41,9 +41,11 @@ def home_dir() -> Path:
     if env:
         base = Path(env).expanduser()
     else:
-        base = Path.home() / ".config" / "neondeck"
+        from . import platform
+
+        base = platform.current().config_dir()
         try:
-            migrate_legacy(base, Path.home() / ".config" / "claude-deck")
+            migrate_legacy(base, base.parent / "claude-deck")
         except OSError as exc:
             log.warning("Migration from the old settings directory failed: %s", exc)
     base.mkdir(parents=True, exist_ok=True)

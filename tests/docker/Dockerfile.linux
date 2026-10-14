@@ -1,0 +1,18 @@
+# Linux smoke environment: run the test suite (including the tmux integration test) and the agent against a real tmux.
+# Build and run through scripts/linux-smoke.sh from the repository root.
+FROM python:3.12-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tmux iproute2 procps curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir uv \
+    && useradd --create-home --shell /bin/bash nd \
+    && mkdir /app && chown nd:nd /app
+
+ENV UV_LINK_MODE=copy PYTHONUNBUFFERED=1 LANG=C.UTF-8
+WORKDIR /app
+COPY --chown=nd:nd . /app
+USER nd
+RUN uv sync --group dev
+
+CMD ["uv", "run", "--no-sync", "pytest", "-q"]

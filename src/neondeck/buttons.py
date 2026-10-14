@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Awaitable, Callable
 
+from . import platform
 from .config import atomic_write_json
 
 COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -155,7 +156,7 @@ class ButtonStore:
 
 async def _run_shell(command: str, timeout: int) -> tuple[bool, str]:
     proc = await asyncio.create_subprocess_exec(
-        "/bin/zsh", "-lc", command,
+        *platform.current().shell_argv(command),
         stdin=asyncio.subprocess.DEVNULL,
         stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT,
     )
@@ -190,8 +191,11 @@ async def run_button(
         if a["type"] == "shell":
             return await _run_shell(a["command"], int(a.get("timeout", 10)))
         if a["type"] == "open_url":
+            argv = platform.current().open_argv(a["url"])
+            if argv is None:
+                return False, "xdg-open non trovato: installa xdg-utils"
             proc = await asyncio.create_subprocess_exec(
-                "open", a["url"],
+                *argv,
                 stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.PIPE,
             )
             _, err = await proc.communicate()

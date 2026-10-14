@@ -127,7 +127,7 @@
 <body>
 <div id="tokenGate" hidden>
   <form id="tokenForm">
-    <h1>Collega al Mac</h1>
+    <h1>Collega al computer</h1>
     <p id="tokenMsg">Incolla il token mostrato nel pannello di amministrazione (oppure scansiona il QR code).</p>
     <input id="tokenInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Token">
     <button type="submit">Collega</button>
@@ -136,13 +136,13 @@
 <div id="netGate" hidden>
   <div class="gateBox">
     <h1 id="netTitle">Rete non fidata</h1>
-    <p id="netMsg">Il Mac è su una rete non fidata. Sul Mac: <code>neondeck trust</code></p>
+    <p id="netMsg">Il computer è su una rete non fidata. Sul computer: <code>neondeck trust</code></p>
   </div>
 </div>
 <div id="screen">
   <header>
     <span class="pill" id="conn"><i></i><span>Connessione…</span></span>
-    <span class="pill" id="iterm"><i></i><span>iTerm2</span></span>
+    <span class="pill" id="terms"><i></i><span>Terminali</span></span>
     <span class="pill off" id="procs" hidden><i></i><span>Processi non leggibili</span></span>
     <span class="grow"></span>
     <span id="clock"></span>
@@ -171,7 +171,7 @@ try {
     token = fromUrl;
   } else token = localStorage.getItem("neondeckToken") || localStorage.getItem("claudeDeckToken") || "";
 } catch { token = params.get("token") || ""; }
-const state = { sessions: [], buttons: [], iterm: false, procs: true, selected: null };
+const state = { sessions: [], buttons: [], terminals: [], procs: true, selected: null };
 let ws = null, backoff = 500, reqId = 0, authFailed = false;
 const pending = new Map();
 const $ = (id) => document.getElementById(id);
@@ -202,7 +202,7 @@ function connect() {
     if (ev.code === 4403 || ev.code === 4429) {  // untrusted network / too many attempts: keep retrying slowly
       $("netTitle").textContent = ev.code === 4403 ? "Rete non fidata" : "Troppi tentativi";
       $("netMsg").innerHTML = ev.code === 4403
-        ? "Il Mac è su una rete non fidata. Sul Mac: <code>neondeck trust</code>"
+        ? "Il computer è su una rete non fidata. Sul computer: <code>neondeck trust</code>"
         : "Troppi tentativi con token errato. Riprova tra qualche minuto.";
       $("netGate").hidden = false;
       setTimeout(connect, 10000);
@@ -223,7 +223,8 @@ function connect() {
   ws.onmessage = (ev) => {
     const m = JSON.parse(ev.data);
     if (m.type === "state") {
-      Object.assign(state, { sessions: m.sessions, buttons: m.buttons, iterm: m.iterm, procs: m.procs !== false });
+      Object.assign(state, { sessions: m.sessions, buttons: m.buttons, procs: m.procs !== false,
+        terminals: m.terminals || (m.iterm ? [{ id: "iterm", label: "iTerm2" }] : []) });
       if (state.selected !== null && !state.sessions.some((s) => s.id === state.selected && s.controllable)) state.selected = null;
       render();
     } else if (m.type === "result") {
@@ -250,13 +251,14 @@ function setConn(on) {
   const el = $("conn");
   el.className = "pill " + (on ? "on" : "off");
   el.lastChild.textContent = demo ? "Demo" : on ? "Connesso" : "Disconnesso";
-  if (!on) { state.iterm = false; renderHeader(); }
+  if (!on) { state.terminals = []; renderHeader(); }
 }
 
 function renderHeader() {
-  const el = $("iterm");
-  el.className = "pill " + (state.iterm ? "on" : "off");
-  el.lastChild.textContent = state.iterm ? "iTerm2 attivo" : "iTerm2 non disponibile";
+  const el = $("terms");
+  const on = state.terminals.length > 0;
+  el.className = "pill " + (on ? "on" : "off");
+  el.lastChild.textContent = on ? state.terminals.map((t) => t.label).join(" · ") + " attivo" : "Nessun terminale";
   $("procs").hidden = state.procs;
 }
 
@@ -277,7 +279,7 @@ function el(tag, cls, text) {
   return e;
 }
 
-const HOST_BADGE = { iterm: "iT", vscode: "VS", other: "" };
+const HOST_BADGE = { iterm: "iT", vscode: "VS", tmux: "TM", wezterm: "WZ", kitty: "KT", other: "" };
 const compactLoc = (loc) => (loc || "").replaceAll(" · ", "·");
 
 // Cyberpunk android mascot, tinted with the status color via currentColor.
@@ -382,7 +384,7 @@ function startDemo() {
   const key = (id, title, value, text) => ({ id, title, icon: { type: "emoji", value },
     action: { type: "send_keys", text, target: "current" } });
   Object.assign(state, {
-    iterm: true, procs: true,
+    terminals: [{ id: "iterm", label: "iTerm2" }], procs: true,
     sessions: [
       claude(1, "webshop", "busy", 3, "iterm", "F1 · T1"),
       claude(2, "infra", "idle", 12, "iterm", "F1 · T2"),

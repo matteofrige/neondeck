@@ -12,10 +12,10 @@ labels: bug
 
 **Environment**
 - Neondeck version (`neondeck --version`):
-- macOS version:
-- Terminal: iTerm2 / VS Code / Cursor / other
+- OS (macOS version, or Linux distribution and desktop/session type X11 or Wayland):
+- Terminal: iTerm2 / tmux / WezTerm / kitty / VS Code / Cursor / other
 - Device: phone (browser) / Raspberry Pi / other
 
 **`neondeck status` output** (redact anything private)
 
-**Log excerpt** (`~/Library/Logs/neondeck.log`)
+**Log excerpt** (`~/Library/Logs/neondeck.log` on macOS, `journalctl --user -u neondeck` on Linux)

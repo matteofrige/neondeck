@@ -20,7 +20,7 @@ MAX_FAILURES = 5
 FAIL_WINDOW = 600.0
 LOCKOUT = 600.0
 MAX_TRACKED = 1024
-LOCALNET = "localnet_permission"  # reason: macOS Local Network privacy hides the neighbor table
+LOCALNET = "localnet_permission"  # reason: macOS Local Network privacy hides the neighbor table (macOS only)
 NO_ROUTE, NO_ARP = "no_route", "no_arp"
 LOCALNET_WARN_EVERY = 600.0
 log = logging.getLogger("neondeck.net")
@@ -153,7 +153,7 @@ def parse_ifconfig(text: str) -> list:
 
 
 def in_local_subnet(client_ip: str, interfaces) -> bool:
-    """True when client_ip is inside the subnet of one of the Mac's interfaces."""
+    """True when client_ip is inside the subnet of one of the host's interfaces."""
     try:
         ip = ipaddress.ip_address(client_ip.split("%")[0])
     except ValueError:
@@ -332,7 +332,10 @@ class NetworkMonitor:
 
     def __init__(self, detect: Callable[[], dict | None] | None = None,
                  clock: Callable[[], float] = time.monotonic, ttl: float = CHECK_TTL) -> None:
-        self._detect, self._clock, self._ttl = detect or NetworkProbe(), clock, ttl
+        if detect is None:
+            from . import platform
+            detect = platform.current().network_probe()
+        self._detect, self._clock, self._ttl = detect, clock, ttl
         self._at: float | None = None
         self._lock = asyncio.Lock()
         self.current: dict | None = None

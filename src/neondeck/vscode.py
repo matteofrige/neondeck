@@ -8,12 +8,12 @@ import os
 from pathlib import Path
 from typing import Callable
 
+from . import platform
 from .errors import ControlError
 
 log = logging.getLogger("neondeck.vscode")
 REQUEST_TIMEOUT = 3
 RAISE_TIMEOUT = 5
-CLI_NAMES = ("code", "cursor")
 
 
 class BridgeError(ControlError):
@@ -189,20 +189,13 @@ class BridgeServer:
         await self._request(win, {"type": "send", "terminalId": term["id"], "text": text})
 
 
-def _find_cli(app_path: str) -> str | None:
-    for name in CLI_NAMES:
-        cli = Path(app_path) / "Contents" / "Resources" / "app" / "bin" / name
-        if cli.is_file() and os.access(cli, os.X_OK):
-            return str(cli)
-    return None
-
-
 async def raise_window(win: Window, app_path: str | None) -> None:
     """The extension API cannot raise the OS window: use the editor CLI (or `open`) instead."""
-    if os.environ.get("NEONDECK_NO_RAISE") or os.environ.get("CLAUDE_DECK_NO_RAISE") or not app_path:
+    if os.environ.get("NEONDECK_NO_RAISE") or os.environ.get("CLAUDE_DECK_NO_RAISE"):
         return
-    cli = _find_cli(app_path) if win.folders else None
-    argv = [cli, win.folders[0]] if cli else ["open", "-a", app_path]
+    argv = platform.current().editor_raise_argv(win.app, app_path, win.folders)
+    if not argv:
+        return
     try:
         proc = await asyncio.create_subprocess_exec(
             *argv, stdin=asyncio.subprocess.DEVNULL,

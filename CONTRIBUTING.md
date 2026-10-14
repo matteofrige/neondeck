@@ -10,7 +10,7 @@ uv run pytest          # all tests must pass
 uv run neondeck run    # run the agent from the checkout
 ```
 
-Python 3.12+ and macOS are required to run the agent; the tests also run elsewhere.
+Python 3.12+ and macOS or Linux are required to run the agent. The tmux integration test needs `tmux` (it is skipped without it); `scripts/linux-smoke.sh` runs everything on Linux in Docker.
 
 ## Guidelines
 

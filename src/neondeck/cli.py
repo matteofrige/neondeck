@@ -1,10 +1,8 @@
-"""Command line interface: run the agent, install it as a LaunchAgent, manage the token."""
+"""Command line interface: run the agent, install it as a background service, manage the token."""
 from __future__ import annotations
 
 import argparse
 import json
-import os
-import plistlib
 import shutil
 import subprocess
 import sys
@@ -16,23 +14,14 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from . import __version__
-from .config import env_home, home_dir, load_config, preview_url, save_config
-from .netguard import LOCALNET, diagnose_network, is_trusted, localnet_guidance, new_entry, normalize_mac
+from . import __version__, platform
+from .config import home_dir, load_config, preview_url, save_config
+from .netguard import LOCALNET, is_trusted, localnet_guidance, new_entry, normalize_mac
+from .platform import UnsupportedPlatform
 from .vsix import build_vsix, extension_id
 
-LABEL = "io.neondeck.agent"
-PLIST = Path.home() / "Library" / "LaunchAgents" / f"{LABEL}.plist"
-LOG = Path.home() / "Library" / "Logs" / "neondeck.log"
-# Pre-rename (Claude Deck) identifiers, cleaned up by install/uninstall
-LEGACY_LABEL = "com.hooxlab.claude-deck"
-LEGACY_PLIST = Path.home() / "Library" / "LaunchAgents" / f"{LEGACY_LABEL}.plist"
+# Pre-rename (Claude Deck) identifier, cleaned up by install/uninstall
 LEGACY_EXTENSION = "hooxlab.claude-deck-bridge"
-DOMAIN = f"gui/{os.getuid()}"
-EDITOR_BUNDLES = (
-    "/Applications/Visual Studio Code.app/Contents/Resources/app/bin/code",
-    "/Applications/Cursor.app/Contents/Resources/app/bin/cursor",
-)
 LEGACY_LINKS = (
     Path.home() / ".vscode" / "extensions" / f"{LEGACY_EXTENSION}-0.1.0",
     Path.home() / ".cursor" / "extensions" / f"{LEGACY_EXTENSION}-0.1.0",
@@ -41,38 +30,12 @@ LEGACY_LINKS = (
 
 # ---------------------------------------------------------------- helpers
 
-def launchctl(*args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["launchctl", *args], capture_output=True, text=True)
-
-
-def cli_path() -> str:
-    found = shutil.which("neondeck")
-    return str(Path(found or sys.argv[0]).resolve())
-
-
-def build_plist() -> dict:
-    env = {"PATH": f"{Path.home()}/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"}
-    if env_home():
-        env["NEONDECK_HOME"] = env_home()
-    return {
-        "Label": LABEL,
-        "ProgramArguments": [cli_path(), "run"],
-        "RunAtLoad": True,
-        "KeepAlive": True,
-        "ProcessType": "Interactive",
-        "EnvironmentVariables": env,
-        "StandardOutPath": str(LOG),
-        "StandardErrorPath": str(LOG),
-    }
-
-
 def editor_clis() -> list[str]:
-    found: dict[str, str] = {}
-    candidates = [shutil.which(n) for n in ("code", "cursor")] + list(EDITOR_BUNDLES)
-    for c in candidates:
-        if c and os.path.isfile(c) and os.access(c, os.X_OK):
-            found.setdefault(os.path.realpath(c), c)
-    return list(found.values())
+    return platform.current().editor_clis()
+
+
+def diagnose_network() -> tuple[dict | None, str | None]:
+    return platform.current().diagnose_network()
 
 
 def remove_legacy_links() -> None:
@@ -80,15 +43,6 @@ def remove_legacy_links() -> None:
         if link.is_symlink():
             link.unlink()
             print(f"Rimosso il vecchio collegamento {link}")
-
-
-def remove_legacy_agent() -> None:
-    res = launchctl("bootout", f"{DOMAIN}/{LEGACY_LABEL}")
-    if LEGACY_PLIST.exists():
-        LEGACY_PLIST.unlink()
-        print(f"Rimosso il vecchio LaunchAgent {LEGACY_PLIST}")
-    elif res.returncode == 0:
-        print(f"Scaricato il vecchio LaunchAgent {LEGACY_LABEL}")
 
 
 def remove_legacy_extension(cli: str) -> None:
@@ -163,27 +117,21 @@ def cmd_run(args) -> int:
 
 def cmd_install(args) -> int:
     home, cfg = load()  # creates config, token and admin key on first use
-    if not args.no_launchd:
-        PLIST.parent.mkdir(parents=True, exist_ok=True)
-        LOG.parent.mkdir(parents=True, exist_ok=True)
-        with PLIST.open("wb") as f:
-            plistlib.dump(build_plist(), f)
-        remove_legacy_agent()  # frees the port the old agent is holding
-        launchctl("bootout", f"{DOMAIN}/{LABEL}")  # fails when not loaded: ignore
-        res = launchctl("bootstrap", DOMAIN, str(PLIST))
-        if res.returncode != 0:
-            print(f"launchctl bootstrap non riuscito: {res.stderr.strip()}", file=sys.stderr)
-            return 1
-        print(f"LaunchAgent installato: {PLIST}")
-        info = wait_network_check(cfg)
-        if info and info.get("network_reason") == LOCALNET:
-            print_localnet_help()
+    svc = platform.current().service()
+    if not args.no_service:
+        rc = svc.install()
+        if rc:
+            return rc
+        if svc.started:
+            info = wait_network_check(cfg)
+            if info and info.get("network_reason") == LOCALNET:
+                print_localnet_help()
     if not args.no_vscode:
         remove_legacy_links()
         install_extension()
     auto_trust(home, cfg)
-    if not args.no_launchd:
-        print(f"\nLog: {LOG}")
+    if not args.no_service:
+        print(f"\n{svc.log_hint()}")
         print("Pannello admin: esegui `neondeck admin`")
     print_qr(cfg)
     return 0
@@ -227,10 +175,7 @@ def install_extension() -> None:
 
 
 def cmd_uninstall(args) -> int:
-    launchctl("bootout", f"{DOMAIN}/{LABEL}")
-    PLIST.unlink(missing_ok=True)
-    print("LaunchAgent rimosso.")
-    remove_legacy_agent()
+    platform.current().service().uninstall()
     for cli in editor_clis():
         res = subprocess.run([cli, "--uninstall-extension", extension_id()],
                              capture_output=True, text=True)
@@ -246,26 +191,30 @@ def cmd_uninstall(args) -> int:
     return 0
 
 
+def local_backend_reports() -> list[dict]:
+    """Terminal backends probed from the CLI itself (used when the server does not answer)."""
+    import asyncio
+
+    from .terminals import make_backends, reports
+
+    backends = [b for b in make_backends(platform.current(), {}, lambda: None) if b.name != "iterm"]
+    rows = asyncio.run(reports(backends))
+    if platform.current().name == "darwin":
+        rows.insert(0, {"name": "iterm", "text": "iTerm2: server non attivo"})
+    return rows
+
+
 def cmd_status(args) -> int:
     home, cfg = load()
     print(f"Versione: {__version__}")
-    if LEGACY_PLIST.exists():
-        print(f"Attenzione: esiste ancora il vecchio LaunchAgent {LEGACY_PLIST} (esegui `neondeck install`)")
-    print(f"LaunchAgent installato: {'sì' if PLIST.exists() else 'no'} ({PLIST})")
-    res = launchctl("print", f"{DOMAIN}/{LABEL}")
-    if res.returncode == 0:
-        lines = [l.strip() for l in res.stdout.splitlines()
-                 if l.strip().startswith(("state =", "pid ="))]
-        print("launchd: caricato" + ("".join(f"\n  {l}" for l in lines)))
-    else:
-        print("launchd: non caricato")
+    for line in platform.current().service().status_lines():
+        print(line)
     url = f"http://127.0.0.1:{cfg['port']}/api/sessions"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {cfg['token']}"})
     try:
         with urllib.request.urlopen(req, timeout=3) as r:
             data = json.load(r)
-        print(f"Server: risponde su {url} ({len(data['sessions'])} sessioni, iTerm2 "
-              f"{'connesso' if data.get('iterm') else 'non connesso'})")
+        print(f"Server: risponde su {url} ({len(data['sessions'])} sessioni)")
     except (OSError, ValueError, KeyError) as exc:
         print(f"Server: non risponde su {url} ({exc})")
     localnet = False
@@ -290,6 +239,9 @@ def cmd_status(args) -> int:
         print(f"Rete: {net['mac']} {net.get('subnet') or ''} - {label}".replace("  ", " "))
     if localnet:
         print_localnet_help()
+    print("Terminali:")
+    for row in (info or {}).get("backends") or local_backend_reports():
+        print(f"  {row['text']}")
     print(f"Socket bridge: {'presente' if (home / 'bridge.sock').exists() else 'assente'}")
     ext = extension_id()
     for cli in editor_clis():
@@ -390,18 +342,17 @@ def cmd_untrust(args) -> int:
 
 
 def cmd_restart(args) -> int:
-    res = launchctl("kickstart", "-k", f"{DOMAIN}/{LABEL}")
-    if res.returncode != 0:
-        print(f"Riavvio non riuscito: {res.stderr.strip()} (hai eseguito `neondeck install`?)",
-              file=sys.stderr)
-        return 1
-    print("Agent riavviato.")
-    return 0
+    return platform.current().service().restart()
 
 
 def cmd_admin(args) -> int:
     _, cfg = load()
-    return subprocess.run(["open", admin_url(cfg)]).returncode
+    url = admin_url(cfg)
+    argv = platform.current().open_argv(url)
+    if argv is None:
+        print(f"xdg-open non trovato. Apri a mano:\n{url}")
+        return 0
+    return subprocess.run(argv).returncode
 
 
 def cmd_vsix(args) -> int:
@@ -414,7 +365,8 @@ def cmd_vsix(args) -> int:
 def make_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="neondeck",
-        description="Neondeck: telecomando in stile Stream Deck per le sessioni Claude Code (iTerm2 e VS Code).")
+        description="Neondeck: telecomando in stile Stream Deck per le sessioni Claude Code "
+                    "(iTerm2, tmux, WezTerm, kitty e VS Code).")
     p.add_argument("--version", action="version", version=f"neondeck {__version__}")
     sub = p.add_subparsers(dest="command", metavar="comando")
 
@@ -424,13 +376,14 @@ def make_parser() -> argparse.ArgumentParser:
         return sp
 
     add("run", cmd_run, "avvia il server in primo piano (predefinito)")
-    sp = add("install", cmd_install, "installa il LaunchAgent e l'estensione VS Code/Cursor")
+    sp = add("install", cmd_install, "installa il servizio (LaunchAgent su macOS, systemd utente su Linux) e l'estensione VS Code/Cursor")
     sp.add_argument("--no-vscode", action="store_true", help="non installare l'estensione")
-    sp.add_argument("--no-launchd", action="store_true", help="non installare il LaunchAgent")
-    sp = add("uninstall", cmd_uninstall, "rimuove il LaunchAgent e l'estensione")
+    sp.add_argument("--no-service", "--no-launchd", dest="no_service", action="store_true",
+                    help="non installare il servizio (--no-launchd resta come alias)")
+    sp = add("uninstall", cmd_uninstall, "rimuove il servizio e l'estensione")
     sp.add_argument("--purge", action="store_true", help="elimina anche la cartella di configurazione")
-    add("status", cmd_status, "mostra lo stato di LaunchAgent, server ed estensione")
-    add("restart", cmd_restart, "riavvia l'agent in esecuzione (launchctl kickstart)")
+    add("status", cmd_status, "mostra lo stato di servizio, server, rete, terminali ed estensione")
+    add("restart", cmd_restart, "riavvia l'agent in esecuzione (launchctl o systemctl)")
     add("qr", cmd_qr, "mostra l'indirizzo per il telefono e il relativo QR code")
     sp = add("token", cmd_token, "stampa il token di accesso (o la chiave admin)")
     sp.add_argument("--rotate", action="store_true", help="genera un nuovo valore")
@@ -450,6 +403,10 @@ def main(argv: list[str] | None = None) -> None:
     args = make_parser().parse_args(argv)
     func = getattr(args, "func", cmd_run)
     try:
+        platform.current()
         sys.exit(func(args) or 0)
+    except UnsupportedPlatform as exc:
+        print(exc, file=sys.stderr)
+        sys.exit(1)
     except KeyboardInterrupt:
         sys.exit(130)

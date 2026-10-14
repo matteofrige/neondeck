@@ -18,13 +18,14 @@ from urllib.parse import urlparse
 
 from aiohttp import WSMsgType, web
 
+from . import platform
 from .buttons import ButtonStore, ValidationError, run_button
 from .config import config_mtime, home_dir, lan_ips, load_config, preview_url, save_config
 from .errors import ControlError
-from .iterm import ItermClient
 from .netguard import (LOCALNET, NO_ARP, NO_ROUTE, LOCALNET_WARN_EVERY, AuthThrottle, LanController, NetworkMonitor, RateLimitedLog,
                        in_local_subnet, is_trusted, localnet_guidance, new_entry, normalize_mac)
 from .sessions import Context, SessionTracker, frontmost_app
+from .terminals import Backend, make_backends, reports
 from .vscode import BridgeServer
 
 log = logging.getLogger("neondeck")
@@ -132,17 +133,22 @@ async def security(request: web.Request, handler):
 # ---------------------------------------------------------------- state
 
 class Core:
-    """Shared state: sessions, buttons, iTerm2, websocket clients."""
+    """Shared state: sessions, buttons, terminal backends, websocket clients."""
 
-    FRONT_TTL = 2.0  # seconds lsappinfo's answer is reused
+    FRONT_TTL = 2.0  # seconds the frontmost-app answer is reused
 
-    def __init__(self, home: Path, config: dict, network: NetworkMonitor | None = None) -> None:
+    def __init__(self, home: Path, config: dict, network: NetworkMonitor | None = None,
+                 backends: list[Backend] | None = None) -> None:
         self.home = home
         self.config = config
+        self.plat = platform.current()
         self.store = ButtonStore(home)
         self.tracker = SessionTracker()
         self.wake = asyncio.Event()
-        self.iterm = ItermClient(self._iterm_changed)
+        self.backends = make_backends(self.plat, config, self._terminals_changed) if backends is None else backends
+        self.by_name = {b.name: b for b in self.backends}
+        if "tmux" in self.by_name:
+            self.by_name["tmux"].raiser = self._raise_tmux_client
         self.bridge = BridgeServer(home, self.wake.set)
         self.network = network or NetworkMonitor()
         self.lan: LanController | None = None  # set by make_app
@@ -162,18 +168,38 @@ class Core:
         self._cfg_mtime = config_mtime(home)
 
     @property
-    def show_all_iterm(self) -> bool:
-        return self.config.get("show_all_iterm", True) is not False
+    def show_all_terminals(self) -> bool:
+        """Terminal tiles for panes without Claude Code (the pre-0.4 key show_all_iterm is the fallback)."""
+        value = self.config.get("show_all_terminals", self.config.get("show_all_iterm", True))
+        return value is not False
 
-    def _iterm_changed(self) -> None:
+    @property
+    def iterm(self) -> Backend | None:
+        return self.by_name.get("iterm")
+
+    def _terminals_changed(self) -> None:
         self._front_at = -math.inf  # focus moved: don't trust the cached frontmost app
         self.wake.set()
+
+    async def _raise_tmux_client(self, client: dict, chain: list, table: dict) -> None:
+        """Bring the terminal window that hosts a tmux client to the front."""
+        it = self.iterm
+        if it is not None and it.available() and any("iTerm" in table[p][2] for p in chain if p in table):
+            tty = client["tty"] or table.get(client["pid"], (0, "", ""))[1]
+            if tty and tty != "?":
+                try:
+                    await it.focus_tty(tty)
+                    return
+                except ControlError:
+                    pass
+        await self.plat.raise_pids(chain, table)
 
     # --- clients
     def add_client(self, ws: web.WebSocketResponse, ip: str = "127.0.0.1") -> None:
         self.clients.add(ws)
         self._client_ip[ws] = ip
-        self.iterm.want()
+        for b in self.backends:
+            b.want(math.inf)
         self.active.set()
 
     def remove_client(self, ws: web.WebSocketResponse) -> None:
@@ -181,7 +207,8 @@ class Core:
         self._client_ip.pop(ws, None)
         if not self.clients:
             self.active.clear()
-            self.iterm.want(60)
+            for b in self.backends:
+                b.want(60)
 
     async def close_lan_clients(self) -> None:
         for ws in list(self.clients):
@@ -215,7 +242,8 @@ class Core:
             "type": "state",
             "sessions": self.tracker.sessions,
             "buttons": self.store.buttons,
-            "iterm": self.iterm.connected,
+            "iterm": bool(self.iterm and self.iterm.available()),
+            "terminals": [{"id": b.name, "label": b.label} for b in self.backends if b.available()],
             "procs": self.tracker.procs,
         }
 
@@ -231,7 +259,7 @@ class Core:
                 self.remove_client(ws)
 
     async def front_app(self) -> str | None:
-        """Frontmost app, only when an iTerm/VS Code session exists; reused for FRONT_TTL seconds."""
+        """Frontmost app, only when a terminal pane or VS Code session exists; reused for FRONT_TTL seconds."""
         if not self._need_front:
             return None
         now = time.monotonic()
@@ -241,26 +269,54 @@ class Core:
         return self._front
 
     async def refresh(self, max_age: float = 0.0) -> None:
-        """One full refresh (iTerm, frontmost app, session files, bridge); skipped if newer than max_age."""
+        """One full refresh (terminals, frontmost app, session files, bridge); skipped if newer than max_age."""
         async with self._refresh_lock:
             if max_age and time.monotonic() - self._refreshed_at < max_age:
                 return
-            self.iterm.want(math.inf if self.clients else 60)
-            if not self.clients and not self.iterm.connected:  # on-demand call: give iTerm a moment
-                await self.iterm.wait_connected(1.5)
-            focus_tty, ttys, isessions = await self.iterm.snapshot(details=self.show_all_iterm)
-            ctx = Context(iterm_connected=self.iterm.connected, iterm_ttys=ttys, iterm_focus_tty=focus_tty,
-                          iterm_sessions=isessions, front_app=await self.front_app(), bridge=self.bridge)
+            for b in self.backends:
+                b.want(math.inf if self.clients else 60)
+            if not self.clients:  # on-demand call: give iTerm a moment to connect
+                await asyncio.gather(*(b.wait_ready(1.5) for b in self.backends if b.name == "iterm"))
+            await asyncio.gather(*(b.probe() for b in self.backends), return_exceptions=True)
+            panes, connected = await self._collect()
+            ctx = Context(panes=panes, connected=frozenset(connected), front_app=await self.front_app(),
+                          front_known=self.plat.front_supported(), show_all=self.show_all_terminals,
+                          bridge=self.bridge)
             sig = self.tracker.signature(ctx)
             if sig != self._sig:
                 self._sig = sig
                 await self.tracker.refresh(ctx)
-                need = any(x["host"] in ("iterm", "vscode") for x in self.tracker.sessions)
+                need = bool(panes) or any(x["host"] == "vscode" for x in self.tracker.sessions)
                 if need and not self._need_front:
                     self.wake.set()  # a terminal session appeared: look at the frontmost app next
                 self._need_front = need
                 await self.broadcast()
             self._refreshed_at = time.monotonic()
+
+    async def _collect(self) -> tuple[list[dict], set[str]]:
+        """Panes of every available backend, and the names of the backends that answered."""
+        live = [b for b in self.backends if b.available()]
+        results = await asyncio.gather(*(b.snapshot(self.show_all_terminals) for b in live), return_exceptions=True)
+        panes: list[dict] = []
+        connected: set[str] = set()
+        for b, res in zip(live, results):
+            if isinstance(res, asyncio.CancelledError):
+                raise res
+            if isinstance(res, BaseException):
+                log.debug("Scansione di %s fallita: %r", b.label, res)
+                continue
+            panes += res
+            if b.available():
+                connected.add(b.name)
+        return panes, connected
+
+    async def backend_report(self) -> list[dict]:
+        """Status lines of every terminal backend plus the VS Code bridge (for admin info and `neondeck status`)."""
+        rows = await reports(self.backends)
+        n = len(self.bridge.windows)
+        rows.append({"name": "vscode", "label": "VS Code bridge", "available": n > 0,
+                     "text": f"VS Code bridge: {n} {'finestra' if n == 1 else 'finestre'}"})
+        return rows
 
     async def watch(self) -> None:
         """Refresh loop; it blocks on `active` (no timers, no subprocesses) while nobody is connected."""
@@ -281,21 +337,33 @@ class Core:
 
     # --- actions
     def resolve(self, ref) -> dict | None:
-        """Tile by stable id ("claude:<pid>", "iterm:<session>") or by Claude pid (compatibility)."""
+        """Tile by stable id ("claude:<pid>", "tmux:%3", "iterm:<session>") or by Claude pid (compatibility)."""
         if isinstance(ref, str):
             return self.tracker.by_id(ref)
         if isinstance(ref, int) and not isinstance(ref, bool):
             return self.tracker.by_pid(ref)
         return None
 
+    def _backend(self, name: str) -> Backend:
+        b = self.by_name.get(name)
+        if b is None or not b.available():
+            raise ControlError("Terminale non raggiungibile")
+        return b
+
+    @staticmethod
+    def _pane_of(s: dict) -> tuple[str, str] | None:
+        """(backend, pane id) of a tile that lives in a terminal backend."""
+        if s["kind"] == "terminal":
+            return s["backend"], s["paneId"]
+        return s.get("_pane")
+
     async def focus_pid(self, ref) -> None:
         s = self.resolve(ref)
         if s is None:
             raise ControlError("Sessione non trovata")
-        if s["kind"] == "terminal":
-            await self.iterm.focus(session_id=s["itermSession"])
-        elif s["host"] == "iterm":
-            await self.iterm.focus(s["tty"])
+        pane = self._pane_of(s)
+        if pane:
+            await self._backend(pane[0]).focus(pane[1])
         elif s["host"] == "vscode":
             await self.bridge.focus(s)
         else:
@@ -308,10 +376,9 @@ class Core:
             s = self.tracker.focused() or self.tracker.by_id(self.last_focused_id)
             if s is None:
                 raise ControlError("Nessuna sessione in primo piano")
-        if s["kind"] == "terminal":
-            await self.iterm.send_text(text, session_id=s["itermSession"])
-        elif s["host"] == "iterm":
-            await self.iterm.send_text(text, s["tty"])
+        pane = self._pane_of(s)
+        if pane:
+            await self._backend(pane[0]).send_text(pane[1], text)
         elif s["host"] == "vscode":
             await self.bridge.send(s, text)
         else:
@@ -364,7 +431,8 @@ async def body(request: web.Request) -> dict:
 async def api_sessions(request):
     c = core(request)
     await c.refresh(max_age=1.0)  # no-op while the watch loop is running
-    return web.json_response({"sessions": c.tracker.sessions, "iterm": c.iterm.connected,
+    return web.json_response({"sessions": c.tracker.sessions, "iterm": bool(c.iterm and c.iterm.available()),
+                              "terminals": [{"id": b.name, "label": b.label} for b in c.backends if b.available()],
                               "procs": c.tracker.procs})
 
 
@@ -620,13 +688,14 @@ async def admin_info(request):
         "lan_listening": bool(lan and lan.listening_ip), "lan_ip": lan.listening_ip if lan else None,
         "network_trusted": bool(lan and lan.network_trusted), "network_name": lan.network_name if lan else None,
         "network_reason": lan.network_reason if lan else None, "network_checked": bool(lan and lan.checked),
-        "show_all_iterm": core(request).show_all_iterm,
+        "show_all_terminals": core(request).show_all_terminals,
+        "backends": await core(request).backend_report(),
         "bonjour": ("zc" in request.app) if lan and lan.listening_ip else None,
     })
 
 
 NETWORK_REASONS = {
-    NO_ROUTE: "Nessuna rete attiva: collega il Mac a una rete.",
+    NO_ROUTE: "Nessuna rete attiva: collega il computer a una rete.",
     NO_ARP: "Il MAC del gateway non è leggibile.",
     LOCALNET: "macOS blocca la lettura della rete: serve il permesso Rete locale per l'interprete Python.",
 }
@@ -714,16 +783,17 @@ async def admin_networks_delete(request):
 async def admin_settings(request):
     c = core(request)
     data = await body(request)
-    value = data.get("show_all_iterm") if isinstance(data, dict) else None
+    value = data.get("show_all_terminals", data.get("show_all_iterm")) if isinstance(data, dict) else None
     if not isinstance(value, bool):
         return json_error(400, "Valore non valido")
-    c.config["show_all_iterm"] = value
+    c.config["show_all_terminals"] = value
+    c.config.pop("show_all_iterm", None)
     save_config(c.home, c.config)
     c._cfg_mtime = config_mtime(c.home)
     c.wake.set()
     c._refreshed_at = -math.inf
     await c.refresh()
-    return web.json_response({"show_all_iterm": value})
+    return web.json_response({"show_all_terminals": value})
 
 
 # ---------------------------------------------------------------- lifecycle
@@ -800,7 +870,8 @@ async def lan_loop(app: web.Application):
 
 async def on_startup(app: web.Application):
     c: Core = app["core"]
-    c.iterm.start()
+    for b in c.backends:
+        b.start()
     await c.bridge.start()
     app["watch"] = asyncio.create_task(c.watch())
     app["lan_task"] = asyncio.create_task(lan_loop(app))
@@ -809,7 +880,8 @@ async def on_startup(app: web.Application):
 async def on_cleanup(app: web.Application):
     app["watch"].cancel()
     app["lan_task"].cancel()
-    await app["core"].iterm.stop()
+    for b in app["core"].backends:
+        await b.stop()
     await app["core"].bridge.stop()
     await stop_zeroconf(app)
 

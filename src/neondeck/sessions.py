@@ -1,48 +1,56 @@
-"""Discovery of active Claude Code sessions from ~/.claude/sessions."""
+"""Discovery of active Claude Code sessions from ~/.claude/sessions, merged with the terminal panes."""
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import os
-import re
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import platform
+from .platform.base import outer_app  # noqa: F401  (re-exported)
+from .terminals.base import BACKEND_ORDER, loc_of  # noqa: F401  (re-exported)
+
 SESSIONS_DIR = Path.home() / ".claude" / "sessions"
 MAX_CHAIN = 64
-PS_WARN_EVERY = 300  # seconds between repeated `ps` warnings
+EDITOR_EXES = ("code", "code-insiders", "codium", "cursor")  # Linux: all Electron processes share the exe
 log = logging.getLogger("neondeck.sessions")
-_last_ps_warn = 0.0
 
 
 @dataclass
 class Context:
-    """Per-poll view of the terminal hosts, gathered by the server."""
-    iterm_connected: bool = False
-    iterm_ttys: frozenset = frozenset()
-    iterm_focus_tty: str | None = None
-    iterm_sessions: list = field(default_factory=list)  # all iTerm2 sessions (see ItermClient.snapshot), if wanted
+    """Per-poll view of the terminals, gathered by the server."""
+    panes: list = field(default_factory=list)  # panes of every available backend (see terminals.base)
+    connected: frozenset = frozenset()  # names of the backends that answered
     front_app: str | None = None
+    front_known: bool = True  # False when the platform cannot tell the frontmost app: pane focus is trusted
+    show_all: bool = True  # terminal tiles for panes that run no Claude Code session
     bridge: object | None = None  # vscode.BridgeServer
 
 
-def loc_of(it: dict) -> str:
-    """'F1 · T2' or 'F1 · T2 · P3' (pane only when the tab is split)."""
-    loc = f"F{it['window']} · T{it['tab']}"
-    return f"{loc} · P{it['pane']}" if it.get("panes", 1) > 1 else loc
+def pane_focused(p: dict, front_app: str | None, front_known: bool = True) -> bool:
+    """A pane is focused when its terminal marks it active and that app is in front."""
+    if not p.get("active"):
+        return False
+    if not front_known:
+        return True
+    if not front_app:
+        return False
+    f = front_app.lower()
+    # substring either way ("iTerm" vs "iTerm2"), but not for very short names such as "sh" or "zsh"
+    return any(a == f or (len(a) >= 4 and (a in f or f in a)) for a in (x.lower() for x in p.get("apps") or []))
 
 
-def terminal_tile(it: dict, front_app: str | None) -> dict:
-    """Tile for an iTerm2 session that is not a Claude Code session."""
-    path = it.get("path") or ""
-    title = it.get("job") or it.get("title") or "shell"
+def terminal_tile(p: dict, focused: bool) -> dict:
+    """Tile for a pane that is not a Claude Code session."""
+    path = p.get("cwd") or ""
+    title = p.get("job") or p.get("title") or "shell"
     return {
         "kind": "terminal",
-        "id": f"iterm:{it['session_id']}",
+        "id": f"{p['backend']}:{p['pane_id']}",
         "pid": None,
-        "itermSession": it["session_id"],
+        "backend": p["backend"],
+        "paneId": p["pane_id"],
         "sessionId": None,
         "name": title,
         "title": title,
@@ -51,89 +59,89 @@ def terminal_tile(it: dict, front_app: str | None) -> dict:
         "status": "terminal",
         "statusSince": 0,
         "startedAt": None,
-        "tty": it.get("tty"),
-        "host": "iterm",
-        "loc": loc_of(it),
+        "tty": p.get("tty"),
+        "host": p["backend"],
+        "loc": p.get("loc"),
         "controllable": True,
-        "focused": bool(it.get("current") and front_app == "iTerm2"),
+        "focused": focused,
     }
 
 
-def merge_tiles(claude: list[dict], iterm: list[dict], front_app: str | None) -> list[dict]:
-    """Claude tiles (tagged with their iTerm location) first, then terminal tiles in window/tab/pane order.
+def _order(p: dict) -> tuple:
+    b = p["backend"]
+    return (BACKEND_ORDER.index(b) if b in BACKEND_ORDER else len(BACKEND_ORDER),
+            p.get("window") or 0, p.get("tab") or 0, p.get("pane") or 0)
 
-    Non-controllable Claude tiles stay last. A terminal tile exists only for iTerm sessions whose tty
-    does not belong to a Claude Code session.
-    """
-    by_tty = {it["tty"]: it for it in iterm if it.get("tty")}
-    claude_ttys = {s["tty"] for s in claude if s.get("tty")}
+
+def match_pane(s: dict, by_tty: dict, by_pid: dict) -> dict | None:
+    """The pane a Claude session runs in: by tty, else (kitty) by the shell pid among its ancestors."""
+    pane = by_tty.get(s.get("tty")) if s.get("tty") else None
+    if pane is None and by_pid:
+        pane = next((by_pid[p] for p in [s.get("pid"), *s.get("_ancestors", [])] if p in by_pid), None)
+    return pane
+
+
+def attach_panes(claude: list[dict], panes: list[dict], front_app: str | None, front_known: bool = True) -> set:
+    """Tag Claude tiles with the pane they run in (host, location, focus, controllable); returns the claimed panes."""
+    by_tty = {p["tty"]: p for p in panes if p.get("tty")}
+    by_pid = {p["pid"]: p for p in panes if p.get("pid")}
+    claimed = set()
     for s in claude:
-        it = by_tty.get(s.get("tty")) if s["host"] == "iterm" else None
-        s["loc"] = loc_of(it) if it else None
-    ordered = sorted(iterm, key=lambda i: (i["window"], i["tab"], i["pane"]))
-    terminals = [terminal_tile(i, front_app) for i in ordered if not i.get("tty") or i["tty"] not in claude_ttys]
+        pane = match_pane(s, by_tty, by_pid)
+        if pane is None:
+            s["loc"] = None
+            continue
+        claimed.add((pane["backend"], pane["pane_id"]))
+        s.update(host=pane["backend"], loc=pane.get("loc"), controllable=True,
+                 focused=pane_focused(pane, front_app, front_known),
+                 _pane=(pane["backend"], pane["pane_id"]))
+    return claimed
+
+
+def assemble(claude: list[dict], panes: list[dict], claimed: set, front_app: str | None,
+             front_known: bool = True, show_all: bool = True) -> list[dict]:
+    """Claude tiles first, then terminal tiles in backend/window/tab/pane order; non-controllable Claude tiles last.
+
+    A terminal tile exists only for panes that do not belong to a Claude Code session; iTerm2 sessions that
+    are just a `tmux` client are hidden, the tmux panes behind them have their own tiles.
+    """
+    terminals = []
+    if show_all:
+        terminals = [terminal_tile(p, pane_focused(p, front_app, front_known)) for p in sorted(panes, key=_order)
+                     if (p["backend"], p["pane_id"]) not in claimed
+                     and not (p["backend"] == "iterm" and p.get("job") == "tmux")]
     return ([s for s in claude if s["controllable"]] + terminals
             + [s for s in claude if not s["controllable"]])
 
 
+def merge_tiles(claude: list[dict], panes: list[dict], front_app: str | None, front_known: bool = True,
+                show_all: bool = True) -> list[dict]:
+    claimed = attach_panes(claude, panes, front_app, front_known)
+    return assemble(claude, panes, claimed, front_app, front_known, show_all)
+
+
 def host_of(comm: str) -> str | None:
+    """Terminal host guessed from the name of an ancestor process."""
     if "iTerm" in comm:
         return "iterm"
     if ("Code Helper" in comm or "Visual Studio Code" in comm or comm.endswith("/Code")
             or "Cursor Helper" in comm or "/Cursor.app/" in comm or comm.endswith("/Cursor")):
         return "vscode"
+    base = os.path.basename(comm.rstrip("/")).lower()
+    if base in EDITOR_EXES:
+        return "vscode"
+    if base.startswith("tmux"):
+        return "tmux"
     return None
 
 
-def outer_app(comm: str) -> str | None:
-    i = comm.find(".app")
-    return comm[:i + 4] if i > 0 else None
-
-
-def _warn_ps(reason: str) -> None:
-    global _last_ps_warn
-    now = time.monotonic()
-    if _last_ps_warn and now - _last_ps_warn < PS_WARN_EVERY:
-        return
-    _last_ps_warn = now
-    log.warning("ps non disponibile (%s): impossibile riconoscere iTerm/VS Code, "
-                "sessioni non comandabili. L'agent gira in una sandbox?", reason)
-
-
 async def process_table() -> dict[int, tuple[int, str, str]]:
-    """One `ps` snapshot: pid -> (ppid, tty, comm). Empty (with a warning) when ps is unusable."""
-    table: dict[int, tuple[int, str, str]] = {}
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "ps", "-axo", "pid=,ppid=,tty=,comm=",
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        out, err = await proc.communicate()
-    except OSError as exc:
-        _warn_ps(str(exc))
-        return table
-    if proc.returncode != 0:
-        _warn_ps(err.decode(errors="replace").strip() or f"codice {proc.returncode}")
-        return table
-    for line in out.decode(errors="replace").splitlines():
-        parts = line.split(None, 3)  # comm may contain spaces
-        if len(parts) == 4 and parts[0].isdigit() and parts[1].isdigit():
-            table[int(parts[0])] = (int(parts[1]), parts[2], parts[3])
-    if not table:
-        _warn_ps("nessun processo restituito")
-    return table
+    """pid -> (ppid, tty, comm). Empty (with a warning) when the process table is unreadable."""
+    return await platform.current().process_table()
 
 
 async def frontmost_app() -> str | None:
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            "/bin/sh", "-c", 'lsappinfo info -only name "$(lsappinfo front)"',
-            stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL)
-        out, _ = await asyncio.wait_for(proc.communicate(), 3)
-    except (OSError, asyncio.TimeoutError):
-        return None
-    line = out.decode(errors="replace").splitlines()[:1]
-    quoted = re.findall(r'"([^"]*)"', line[0]) if line else []
-    return quoted[-1] if quoted else None  # `"iTerm2" ASN:...` or `"LSDisplayName"="iTerm2"`
+    return await platform.current().frontmost_app()
 
 
 def pid_alive(pid: int) -> bool:
@@ -163,11 +171,11 @@ def _file_pid(name: str) -> int | None:
 
 class SessionTracker:
     def __init__(self) -> None:
-        # pid -> (ancestors nearest first, host, app bundle path, tty)
+        # pid -> (ancestors nearest first, host, app bundle path (macOS), tty)
         self._info: dict[int, tuple[list[int], str, str | None, str | None]] = {}
         self._sessions: list[dict] = []
         self._public: list[dict] = []
-        self.procs = True  # False while the last `ps` snapshot was unusable
+        self.procs = True  # False while the last process-table snapshot was unusable
 
     def signature(self, ctx: Context) -> tuple:
         files = []
@@ -181,10 +189,10 @@ class SessionTracker:
             files.append((e.name, mtime, alive))
         files.sort()
         bridge = ctx.bridge
-        iterm = tuple((i["session_id"], i["window"], i["tab"], i["pane"], i["panes"], i["tty"], i["title"],
-                       i["job"], i["path"], i["current"]) for i in ctx.iterm_sessions)
-        return (tuple(files), ctx.iterm_connected, ctx.iterm_ttys, ctx.iterm_focus_tty,
-                ctx.front_app == "iTerm2", bridge.version if bridge else 0, iterm)
+        panes = tuple((p["backend"], p["pane_id"], p.get("tty"), p.get("pid"), p.get("loc"), p.get("title"),
+                       p.get("job"), p.get("cwd"), p.get("window"), p.get("tab"), p.get("pane"),
+                       pane_focused(p, ctx.front_app, ctx.front_known)) for p in ctx.panes)
+        return (tuple(files), ctx.connected, panes, ctx.show_all, bridge.version if bridge else 0)
 
     def _resolve(self, pid: int, table: dict) -> tuple[list[int], str, str | None, str | None] | None:
         if pid in self._info:
@@ -219,7 +227,7 @@ class SessionTracker:
             pid = data.get("pid")
             if isinstance(pid, int) and pid_alive(pid):
                 entries.append((pid, data))
-        # a single ps snapshot, only when some pid is not cached yet
+        # a single process-table snapshot, only when some pid is not cached yet
         table: dict = {}
         if any(p not in self._info for p, _ in entries):
             table = await process_table()
@@ -230,13 +238,10 @@ class SessionTracker:
             ancestors, host, app, tty = self._resolve(pid, table) or ([], "other", None, None)
             cwd = str(data.get("cwd") or "")
             status_at = data.get("statusUpdatedAt") or data.get("updatedAt") or 0
-            if host == "iterm":
-                controllable = bool(ctx.iterm_connected and tty and tty in ctx.iterm_ttys)
-                focused = bool(tty and tty == ctx.iterm_focus_tty and ctx.front_app == "iTerm2")
-            elif host == "vscode" and bridge is not None:
+            if host == "vscode" and bridge is not None:
                 controllable = bridge.match(ancestors) is not None
                 focused = bridge.is_focused(ancestors)
-            else:
+            else:  # terminal panes claim their sessions in attach_panes
                 controllable = focused = False
             result.append({
                 "kind": "claude",
@@ -256,9 +261,10 @@ class SessionTracker:
                 "_ancestors": ancestors,
                 "_app": app,
             })
+        claimed = attach_panes(result, ctx.panes, ctx.front_app, ctx.front_known)
         result.sort(key=lambda s: (not s["controllable"], s["status"] != "busy", -(s["statusSince"] or 0)))
         live = {s["pid"] for s in result}
-        result = merge_tiles(result, ctx.iterm_sessions, ctx.front_app)
+        result = assemble(result, ctx.panes, claimed, ctx.front_app, ctx.front_known, ctx.show_all)
         for pid in list(self._info):
             if pid not in live and not pid_alive(pid):
                 del self._info[pid]

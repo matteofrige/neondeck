@@ -107,7 +107,7 @@
 </div>
 <div class="wrap" id="main">
   <h1>Neondeck</h1>
-  <p class="lead">Configura i pulsanti del dispositivo. Questa pagina è accessibile solo da questo Mac.</p>
+  <p class="lead">Configura i pulsanti del dispositivo. Questa pagina è accessibile solo da questo computer.</p>
 
   <section class="card" id="netCard">
     <h2>Reti fidate</h2>
@@ -167,8 +167,8 @@
 
   <section class="card" id="prefsCard">
     <h2>Sessioni</h2>
-    <label class="row" style="margin:0;font-weight:400"><input type="checkbox" id="fShowAll"> Mostra tutte le sessioni iTerm2, non solo Claude Code</label>
-    <div class="hint">Ogni finestra, scheda e pannello diviso di iTerm2 diventa una tessera; le sessioni Claude Code mantengono la loro.</div>
+    <label class="row" style="margin:0;font-weight:400"><input type="checkbox" id="fShowAll"> Mostra tutte le sessioni dei terminali, non solo Claude Code</label>
+    <div class="hint">Ogni pannello di iTerm2, tmux, WezTerm e kitty diventa una tessera; le sessioni Claude Code mantengono la loro.</div>
   </section>
 
   <div class="grid2">
@@ -225,14 +225,14 @@
         <div class="hint">Sequenze di escape: <code>\e</code> Esc, <code>\r</code> Invio, <code>\n</code> a capo, <code>\t</code> Tab, <code>\x03</code> Ctrl+C, <code>\\</code> barra inversa.</div>
         <label for="fTarget">Destinazione</label>
         <select id="fTarget">
-          <option value="current">Sessione in primo piano (iTerm o VS Code)</option>
+          <option value="current">Sessione in primo piano (terminale o VS Code)</option>
           <option value="selected">Sessione selezionata sul device</option>
         </select>
       </div>
       <div id="aShell" class="hidden">
         <label for="fCmd">Comando</label>
         <textarea id="fCmd" spellcheck="false"></textarea>
-        <div class="hint">Eseguito con <code>/bin/zsh -lc</code> su questo Mac.</div>
+        <div class="hint">Eseguito con la shell di login (<code>zsh -lc</code> su macOS, <code>bash -lc</code> su Linux) su questo computer.</div>
         <label for="fTimeout">Timeout (secondi)</label>
         <input type="number" id="fTimeout" min="1" max="600" value="10">
       </div>
@@ -697,9 +697,9 @@ async function loadInfo() {
     catch { $("copyPhone").textContent = "Copia non riuscita"; }
     setTimeout(() => ($("copyPhone").textContent = "Copia link"), 1500);
   };
-  $("fShowAll").checked = i.show_all_iterm !== false;
+  $("fShowAll").checked = i.show_all_terminals !== false;
   $("fShowAll").onchange = async (e) => {
-    try { await api("PUT", "/api/admin/settings", { show_all_iterm: e.target.checked }); }
+    try { await api("PUT", "/api/admin/settings", { show_all_terminals: e.target.checked }); }
     catch (err) { e.target.checked = !e.target.checked; alert(err.message); }
   };
   $("netWarn").classList.toggle("hidden", i.network_reason !== "localnet_permission");
