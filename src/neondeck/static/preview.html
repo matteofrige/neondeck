@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Neondeck">
+<meta name="theme-color" content="#000000">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<title>Neondeck</title>
+<style>
+  :root {
+    --bg: #000; --panel: #000; --row: #000; --row-hi: #111;
+    --text: #eceff4; --muted: #8b93a3; --accent: #ff3cc7;
+    --ok: #3ccf7a; --busy: #f5a524; --shell: #4c9bff; --other: #6b7280; --err: #ef5350;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: #000; color-scheme: dark; overscroll-behavior: none;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--text); }
+  body { display: grid; place-items: center; touch-action: manipulation; }
+
+  /* Default: fill the viewport (phone remote). ?frame=1 keeps the fixed 800x480 Pi simulator. */
+  #screen { width: 100vw; height: 100vh; height: 100dvh; background: var(--bg); display: flex; flex-direction: column;
+    overflow: hidden; position: relative; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
+  #screen.frame { width: 800px; height: 480px; padding: 0; border-radius: 6px; box-shadow: 0 0 0 10px #161616; }
+
+  header { height: 40px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 14px;
+    background: #000; border-bottom: 1px solid #111; font-size: 14px; color: var(--muted); }
+  header .grow { flex: 1; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; }
+  .pill i { width: 9px; height: 9px; border-radius: 50%; background: var(--other); }
+  .pill.on i { background: var(--ok); }
+  .pill.off i { background: var(--err); }
+  .pill[hidden] { display: none; }
+  #procs { color: var(--err); }
+  #clock { color: var(--text); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  main { flex: 1; display: grid; grid-template-columns: 60% 40%; min-height: 0; }
+  .pane { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .pane + .pane { border-left: 1px solid #1a1a1a; }
+  .label { flex: none; padding: 10px 12px 2px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #5b6270; }
+  /* Portrait / narrow: sessions grid on top (scrolls), actions grid pinned at the bottom */
+  #screen[data-layout="narrow"] main { display: flex; flex-direction: column; }
+  #screen[data-layout="narrow"] #paneS { flex: 1; }
+  #screen[data-layout="narrow"] #paneA { flex: none; max-height: 48%; border-left: 0; border-top: 1px solid #1a1a1a; }
+  #screen[data-layout="narrow"] #buttons { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #sessions { flex: 1; min-height: 0; }
+  .grid { overflow-y: auto; display: grid; gap: 10px; align-content: start; padding: 8px 12px 12px; }
+  #sessions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  #buttons { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .empty { grid-column: 1 / -1; margin: auto; padding: 40px 20px; color: var(--muted); font-size: 18px; text-align: center; }
+  #sessions:has(.empty) { display: flex; }
+
+  /* Stream Deck style: square tiles, big icon, small title */
+  .btn { --c: #444; aspect-ratio: 1 / 1; width: 100%; min-width: 0; align-self: start; padding: 0; overflow: hidden;
+    border: 1px solid #262626; border-radius: 14%; background: #151515; color: #fff; cursor: pointer; font: inherit; transition: transform .08s, border-color .08s, background .15s; }
+  .btn.tinted { background: color-mix(in srgb, var(--c) 22%, #0d0d0d); border-color: color-mix(in srgb, var(--c) 45%, #1a1a1a); }
+  .btn .in { container-type: inline-size; width: 100%; height: 100%; padding: 8% 4% 6%;
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+  .btn:active { transform: scale(.94); border-color: #9a9a9a; }
+  .btn .ic { flex: none; width: 100%; height: 58cqw; font-size: 44cqw; line-height: 58cqw; text-align: center; overflow: hidden; }
+  .btn .ic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .btn .t { width: 100%; text-align: center; font-size: 12px; font-weight: 500; line-height: 1.2; color: #fff;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .btn.ok { background: #14532d; border-color: var(--ok); }
+  .btn.err { background: #5c1a1a; border-color: var(--err); }
+
+  /* Session tiles reuse the .btn look */
+  .tile { --sc: var(--other); position: relative; touch-action: manipulation; }
+  .tile.idle { --sc: var(--ok); } .tile.shell { --sc: var(--shell); } .tile.busy { --sc: var(--busy); }
+  .tile .ic { color: var(--sc); display: flex; align-items: center; justify-content: center; }
+  .tile .ic svg { width: 72%; height: auto; filter: drop-shadow(0 0 2px currentColor) drop-shadow(0 0 6px currentColor); }
+  .tile .ic { position: relative; }
+  .tile .ic::after { content: ""; position: absolute; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.35) 0 1px, transparent 1px 3px); }
+  .tile.busy .ic svg { animation: glitch 1.6s steps(1) infinite; }
+  .tile.busy .ic .eyes { animation: flicker 1.6s steps(1) infinite; }
+  @keyframes glitch { 0%,100% { transform: none; } 18% { transform: translateX(-5%) skewX(-6deg); }
+    21% { transform: translateX(4%); } 24% { transform: none; } 62% { transform: translateX(2%); } 64% { transform: none; } }
+  @keyframes flicker { 0%,100% { opacity: 1; } 40% { opacity: .25; } 43% { opacity: 1; } }
+  .tile .tm { font-size: 10px; color: #6b7280; line-height: 1; margin-top: 2px; white-space: nowrap; }
+  .tile .in { padding-top: 17%; }
+  .tile .ic { height: 50cqw; line-height: 50cqw; }
+  .tile .ic svg { width: 62%; }
+  .tile .sd { position: absolute; top: 8%; left: 8%; width: 7%; height: 7%; min-width: 6px; min-height: 6px; border-radius: 50%; background: var(--sc); }
+  .tile .hb { position: absolute; top: 7%; right: 8%; font-size: 9px; font-weight: 700; color: #8b93a3; letter-spacing: .04em; }
+  /* Plain terminal sessions: neutral cyan, dimmed until focused */
+  .tile.term { --sc: #3a8a99; }
+  .tile.term.focused { --sc: #5ad1e6; }
+  .tile.term .sd { display: none; }
+  .tile.term.focused .cur { animation: flicker 1.2s steps(1) infinite; }
+  .tile.busy { animation: glow 1.4s ease-in-out infinite; }
+  @keyframes glow { 0%,100% { box-shadow: 0 0 0 0 rgba(245,165,36,.0); border-color: rgba(245,165,36,.35); }
+    50% { box-shadow: 0 0 10px 1px rgba(245,165,36,.45); border-color: rgba(245,165,36,.9); } }
+  .tile.focused { outline: 1px solid #fff; outline-offset: -1px; }
+  .tile.selected { outline: 3px solid #fff; outline-offset: -3px; }
+  .tile.disabled { opacity: .35; cursor: default; animation: none; }
+  .tile.disabled:active { transform: none; border-color: #262626; }
+
+  #tokenGate { position: fixed; inset: 0; z-index: 10; background: var(--bg); display: grid; place-items: center; padding: 20px; }
+  #tokenGate[hidden] { display: none; }
+  #netGate { position: fixed; inset: 0; z-index: 10; background: var(--bg); display: grid; place-items: center; padding: 20px; }
+  #netGate[hidden] { display: none; }
+  #netGate .gateBox { width: min(420px, 100%); display: flex; flex-direction: column; gap: 12px; }
+  #netGate h1 { margin: 0; font-size: 24px; }
+  #netGate p { margin: 0; color: var(--muted); }
+  #netGate code { color: var(--text); }
+  #tokenForm { width: min(420px, 100%); display: flex; flex-direction: column; gap: 12px; }
+  #tokenForm h1 { margin: 0; font-size: 24px; }
+  #tokenForm p { margin: 0; color: var(--muted); }
+  #tokenForm input { font: inherit; font-size: 16px; min-height: 56px; padding: 0 14px; border-radius: 12px;
+    border: 1px solid #333; background: #111; color: var(--text); }
+  #tokenForm button { min-height: 56px; border: 0; border-radius: 12px; background: var(--accent); color: #1a0316;
+    font: inherit; font-weight: 700; font-size: 17px; }
+  #toast { position: absolute; left: 50%; bottom: 14px; transform: translate(-50%, 20px); max-width: 90%;
+    background: #000c; border: 1px solid var(--muted); padding: 10px 16px; border-radius: 10px; font-size: 14px;
+    opacity: 0; transition: .2s; pointer-events: none; white-space: pre-wrap; }
+  #toast.show { opacity: 1; transform: translate(-50%, 0); }
+  #toast.err { border-color: var(--err); }
+  #toast.ok { border-color: var(--ok); }
+</style>
+</head>
+<body>
+<div id="tokenGate" hidden>
+  <form id="tokenForm">
+    <h1>Collega al Mac</h1>
+    <p id="tokenMsg">Incolla il token mostrato nel pannello di amministrazione (oppure scansiona il QR code).</p>
+    <input id="tokenInput" type="text" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Token">
+    <button type="submit">Collega</button>
+  </form>
+</div>
+<div id="netGate" hidden>
+  <div class="gateBox">
+    <h1 id="netTitle">Rete non fidata</h1>
+    <p id="netMsg">Il Mac è su una rete non fidata. Sul Mac: <code>neondeck trust</code></p>
+  </div>
+</div>
+<div id="screen">
+  <header>
+    <span class="pill" id="conn"><i></i><span>Connessione…</span></span>
+    <span class="pill" id="iterm"><i></i><span>iTerm2</span></span>
+    <span class="pill off" id="procs" hidden><i></i><span>Processi non leggibili</span></span>
+    <span class="grow"></span>
+    <span id="clock"></span>
+  </header>
+  <main>
+    <div class="pane" id="paneS"><div class="label">Sessioni</div><section id="sessions" class="grid"></section></div>
+    <div class="pane" id="paneA"><div class="label">Azioni</div><section id="buttons" class="grid"></section></div>
+  </main>
+  <div id="toast"></div>
+</div>
+
+<script>
+"use strict";
+const params = new URLSearchParams(location.search);
+const frameMode = params.get("frame") === "1";
+// Demo: fake local state, no WebSocket, no token (?demo=1, or the <meta name="neondeck-demo"> of docs/demo.html)
+const demo = params.get("demo") === "1" || !!document.querySelector('meta[name="neondeck-demo"]');
+let token = "";
+try {
+  const fromUrl = params.get("token");
+  if (fromUrl) {
+    localStorage.setItem("neondeckToken", fromUrl);
+    params.delete("token");
+    const q = params.toString();
+    history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
+    token = fromUrl;
+  } else token = localStorage.getItem("neondeckToken") || localStorage.getItem("claudeDeckToken") || "";
+} catch { token = params.get("token") || ""; }
+const state = { sessions: [], buttons: [], iterm: false, procs: true, selected: null };
+let ws = null, backoff = 500, reqId = 0, authFailed = false;
+const pending = new Map();
+const $ = (id) => document.getElementById(id);
+
+function showGate(msg) {
+  $("tokenMsg").textContent = msg || "Incolla il token mostrato nel pannello di amministrazione (oppure scansiona il QR code).";
+  $("tokenGate").hidden = false;
+  $("tokenInput").focus();
+}
+$("tokenForm").onsubmit = (e) => {
+  e.preventDefault();
+  const v = $("tokenInput").value.trim();
+  if (!v) return;
+  token = v;
+  try { localStorage.setItem("neondeckToken", v); } catch {}
+  $("tokenGate").hidden = true;
+  authFailed = false; backoff = 500;
+  connect();
+};
+
+function connect() {
+  if (!token) { showGate(); return; }
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  ws = new WebSocket(`${proto}://${location.host}/ws?token=${encodeURIComponent(token)}`);
+  ws.onopen = () => { backoff = 500; setConn(true); $("netGate").hidden = true; };
+  ws.onclose = (ev) => {
+    setConn(false);
+    if (ev.code === 4403 || ev.code === 4429) {  // untrusted network / too many attempts: keep retrying slowly
+      $("netTitle").textContent = ev.code === 4403 ? "Rete non fidata" : "Troppi tentativi";
+      $("netMsg").innerHTML = ev.code === 4403
+        ? "Il Mac è su una rete non fidata. Sul Mac: <code>neondeck trust</code>"
+        : "Troppi tentativi con token errato. Riprova tra qualche minuto.";
+      $("netGate").hidden = false;
+      setTimeout(connect, 10000);
+      return;
+    }
+    if (ev.code === 4401) {
+      authFailed = true;
+      token = "";
+      try { localStorage.removeItem("neondeckToken"); localStorage.removeItem("claudeDeckToken"); } catch {}
+      showGate("Token non valido o cambiato. Incolla il token corrente.");
+      return;
+    }
+    for (const [, p] of pending) p({ ok: false, detail: "Connessione persa" });
+    pending.clear();
+    setTimeout(connect, backoff);
+    backoff = Math.min(backoff * 2, 10000);
+  };
+  ws.onmessage = (ev) => {
+    const m = JSON.parse(ev.data);
+    if (m.type === "state") {
+      Object.assign(state, { sessions: m.sessions, buttons: m.buttons, iterm: m.iterm, procs: m.procs !== false });
+      if (state.selected !== null && !state.sessions.some((s) => s.id === state.selected && s.controllable)) state.selected = null;
+      render();
+    } else if (m.type === "result") {
+      const cb = pending.get(m.req);
+      if (cb) { pending.delete(m.req); cb(m); }
+    }
+  };
+}
+
+// Send a request over WS and wait for its "result" (10 s timeout)
+function request(msg) {
+  if (demo) return demoRequest(msg);
+  return new Promise((resolve) => {
+    if (!ws || ws.readyState !== 1) return resolve({ ok: false, detail: "Non connesso all'agent" });
+    const req = ++reqId;
+    pending.set(req, resolve);
+    ws.send(JSON.stringify({ ...msg, req }));
+    setTimeout(() => { if (pending.delete(req)) resolve({ ok: false, detail: "Nessuna risposta" }); }, 10000);
+  });
+}
+setInterval(() => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: "ping" })); }, 15000);
+
+function setConn(on) {
+  const el = $("conn");
+  el.className = "pill " + (on ? "on" : "off");
+  el.lastChild.textContent = demo ? "Demo" : on ? "Connesso" : "Disconnesso";
+  if (!on) { state.iterm = false; renderHeader(); }
+}
+
+function renderHeader() {
+  const el = $("iterm");
+  el.className = "pill " + (state.iterm ? "on" : "off");
+  el.lastChild.textContent = state.iterm ? "iTerm2 attivo" : "iTerm2 non disponibile";
+  $("procs").hidden = state.procs;
+}
+
+function relTime(ms) {
+  if (!ms) return "";
+  const min = Math.floor((Date.now() - ms) / 60000);
+  if (min < 1) return "ora";
+  if (min < 60) return `da ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) return `da ${h} h`;
+  return `da ${Math.floor(h / 24)} g`;
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+const HOST_BADGE = { iterm: "iT", vscode: "VS", other: "" };
+const compactLoc = (loc) => (loc || "").replaceAll(" · ", "·");
+
+// Cyberpunk android mascot, tinted with the status color via currentColor.
+const MASCOT = '<svg viewBox="0 0 16 14" shape-rendering="crispEdges" aria-hidden="true">'
+  + '<path fill="currentColor" d="M7 0h2v2H7zM2 2h12v9H2zM0 5h2v3H0zM14 5h2v3h-2zM5 11h6v1H5zM2 12h12v2H2z"/>'
+  + '<path fill="#000" d="M3 5h10v3H3zM5 9h1v1H5zM7 9h1v1H7zM9 9h1v1H9zM6 12h4v1H6z"/>'
+  + '<path class="eyes" fill="currentColor" d="M4 6h3v1H4zM9 6h3v1H9z"/></svg>';
+
+// Pixel-art terminal monitor for non-Claude sessions (same neon treatment as the mascot).
+const TERMINAL = '<svg viewBox="0 0 16 14" shape-rendering="crispEdges" aria-hidden="true">'
+  + '<path fill="currentColor" d="M1 1h14v10H1zM6 11h4v1H6zM4 12h8v1H4z"/>'
+  + '<path fill="#000" d="M2 2h12v8H2z"/>'
+  + '<path fill="currentColor" d="M4 3h1v1H4zM5 4h1v1H5zM6 5h1v1H6zM5 6h1v1H5zM4 7h1v1H4z"/>'
+  + '<path class="cur" fill="currentColor" d="M8 7h4v1H8z"/></svg>';
+
+function renderSessions() {
+  const box = $("sessions");
+  box.replaceChildren();
+  if (!state.sessions.length) {
+    box.append(el("div", "empty", "Nessuna sessione attiva"));
+    return;
+  }
+  for (const s of state.sessions) {
+    const term = s.kind === "terminal";
+    const known = !term && ["busy", "idle", "shell"].includes(s.status) ? s.status : "";
+    const t = el("div", "btn tile " + (term ? "term " : "") + known + (s.focused ? " focused" : "")
+      + (s.id === state.selected ? " selected" : "") + (s.controllable ? "" : " disabled"));
+    t.title = [s.cwd || s.name, s.loc].filter(Boolean).join("  ");
+    const inner = el("div", "in");
+    const ic = el("div", "ic");
+    ic.innerHTML = term ? TERMINAL : MASCOT;
+    const sub = term ? (s.project || compactLoc(s.loc)) : (s.controllable ? relTime(s.statusSince) : "non comandabile");
+    inner.append(ic, el("div", "t", term ? s.title : (s.project || s.name)), el("div", "tm", sub));
+    const badge = [term ? "" : HOST_BADGE[s.host], compactLoc(s.loc)].filter(Boolean).join(" ");
+    t.append(inner, el("i", "sd"), el("span", "hb", badge));
+    if (s.controllable) {
+      t.onclick = async () => {
+        if (navigator.vibrate) navigator.vibrate(10);
+        state.selected = s.id;
+        renderSessions();
+        const r = await request({ type: "focus", id: s.id });
+        if (!r.ok) toast(r.detail, false);
+      };
+    }
+    box.append(t);
+  }
+}
+
+function renderButtons() {
+  const box = $("buttons");
+  box.replaceChildren();
+  for (const b of state.buttons) {
+    const btn = el("button", "btn");
+    if (b.color) { btn.style.setProperty("--c", b.color); btn.classList.add("tinted"); }
+    const ic = el("div", "ic");
+    if (b.icon.type === "image") {
+      const img = document.createElement("img");
+      img.src = "/" + b.icon.value;
+      img.alt = "";
+      ic.append(img);
+    } else ic.textContent = b.icon.value;
+    const inner = el("div", "in");
+    inner.append(ic, el("div", "t", b.title));
+    btn.append(inner);
+    btn.onclick = async () => {
+      if (navigator.vibrate) navigator.vibrate(10);
+      const r = await request({ type: "press", id: b.id, target_id: state.selected });
+      btn.classList.add(r.ok ? "ok" : "err");
+      setTimeout(() => btn.classList.remove("ok", "err"), 450);
+      toast(r.detail || (r.ok ? "Fatto" : "Errore"), r.ok);
+    };
+    box.append(btn);
+  }
+}
+
+let toastTimer;
+function toast(text, ok) {
+  const t = $("toast");
+  t.textContent = text;
+  t.className = "show " + (ok ? "ok" : "err");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => (t.className = ""), 2200);
+}
+
+function render() { renderHeader(); renderSessions(); renderButtons(); }
+
+function tick() {
+  $("clock").textContent = new Date().toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
+}
+setInterval(tick, 5000); tick();
+setInterval(renderSessions, 30000); // refresh relative times
+
+// ---- Demo mode: realistic fake state, everything stays local
+function startDemo() {
+  const ago = (min) => Date.now() - min * 60000;
+  const claude = (n, project, status, min, host, loc, controllable = true) => ({
+    kind: "claude", id: `claude:${4100 + n}`, pid: 4100 + n, name: project, project, cwd: `/Users/alice/dev/${project}`,
+    status, statusSince: ago(min), host, loc, controllable, focused: false });
+  const term = (n, title, project, loc, focused = false) => ({
+    kind: "terminal", id: `iterm:T${n}`, pid: null, name: title, title, project, loc, host: "iterm",
+    status: "terminal", controllable: true, focused });
+  const key = (id, title, value, text) => ({ id, title, icon: { type: "emoji", value },
+    action: { type: "send_keys", text, target: "current" } });
+  Object.assign(state, {
+    iterm: true, procs: true,
+    sessions: [
+      claude(1, "webshop", "busy", 3, "iterm", "F1 · T1"),
+      claude(2, "infra", "idle", 12, "iterm", "F1 · T2"),
+      claude(3, "blog-engine", "busy", 1, "vscode", null),
+      claude(4, "data-pipeline", "idle", 47, "iterm", "F2 · T1"),
+      claude(5, "mobile-app", "shell", 8, "iterm", "F2 · T2"),
+      claude(6, "webshop-api", "idle", 130, "vscode", null),
+      claude(7, "scratch", "idle", 300, "other", null, false),
+      term(1, "zsh", "webshop", "F1 · T3"),
+      term(2, "vim", "blog-engine", "F2 · T3"),
+      term(3, "ssh", "", "F3 · T1"),
+      term(4, "htop", "", "F3 · T2"),
+    ],
+    buttons: [
+      key("b1", "Esc", "⎋", "\u001b"), key("b2", "Invio", "↵", "\r"),
+      key("b3", "Interrompi", "🛑", "\u0003"), key("b4", "Cambia modalità", "🔀", "\u001b[Z"),
+      { id: "b5", title: "Deploy", icon: { type: "emoji", value: "🚀" }, color: "#ff3cc7",
+        action: { type: "shell", command: "./deploy.sh", timeout: 60 } },
+      { id: "b6", title: "Docs", icon: { type: "emoji", value: "📖" }, color: "#19f0ff",
+        action: { type: "open_url", url: "https://example.com/docs" } },
+    ],
+  });
+  state.selected = "claude:4101";
+  setConn(true);
+  render();
+}
+
+function demoRequest(msg) {
+  if (msg.type === "focus") {
+    for (const s of state.sessions) s.focused = s.id === msg.id;
+    renderSessions();
+    return Promise.resolve({ ok: true, detail: "Demo" });
+  }
+  const b = state.buttons.find((x) => x.id === msg.id);
+  return Promise.resolve({ ok: true, detail: `Demo: «${b ? b.title : "?"}»` });
+}
+
+// Layout: side-by-side when wide landscape, stacked otherwise
+function layout() {
+  const scr = $("screen");
+  scr.classList.toggle("frame", frameMode);
+  const wide = frameMode || (innerWidth >= 700 && innerWidth > innerHeight);
+  scr.dataset.layout = wide ? "wide" : "narrow";
+}
+// data-layout lives on #screen; CSS selectors above are prefixed accordingly
+addEventListener("resize", layout);
+layout();
+render();
+if (demo) startDemo(); else connect();
+</script>
+</body>
+</html>

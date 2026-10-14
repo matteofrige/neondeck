@@ -1,0 +1,27 @@
+{
+  "name": "neondeck-bridge",
+  "displayName": "Neondeck Bridge",
+  "description": "Exposes VS Code integrated terminals to the local Neondeck agent (Unix socket).",
+  "publisher": "neondeck",
+  "version": "0.3.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/matteofrige/neondeck"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./extension.js",
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "neondeck.reconnect",
+        "title": "Neondeck: riconnetti"
+      }
+    ]
+  }
+}

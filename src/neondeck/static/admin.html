@@ -1,0 +1,808 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Neondeck – Amministrazione</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f5f7; --card: #fff; --text: #1d1d1f; --muted: #6e6e73; --line: #d8d8de;
+    --accent: #c2188f; --accent-text: #fff; --ok: #1f9d55; --err: #d93636; --field: #fff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #131316; --card: #1c1c21; --text: #f2f2f5; --muted: #9a9aa6; --line: #34343c;
+      --accent: #ff3cc7; --accent-text: #1a0316; --ok: #3ccf7a; --err: #ff6b6b; --field: #121216; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  .wrap { max-width: 1000px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  .lead { color: var(--muted); margin: 0 0 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 18px; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 820px) { .grid2 { grid-template-columns: 1fr; } }
+  label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; color: var(--muted); }
+  input[type=text], input[type=number], input[type=url], select, textarea {
+    width: 100%; padding: 9px 11px; border-radius: 9px; border: 1px solid var(--line);
+    background: var(--field); color: var(--text); font: inherit; }
+  textarea { font-family: ui-monospace, Menlo, monospace; font-size: 13px; min-height: 70px; resize: vertical; }
+  input[type=color] { width: 56px; height: 36px; padding: 2px; border: 1px solid var(--line); border-radius: 8px; background: var(--field); }
+  input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { font: inherit; border-radius: 9px; border: 1px solid var(--line); background: var(--card); color: var(--text);
+    padding: 7px 13px; cursor: pointer; }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+  button.danger { color: var(--err); }
+  button.small { padding: 4px 9px; font-size: 13px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .grow { flex: 1; min-width: 0; }
+  code, .mono { font-family: ui-monospace, Menlo, monospace; font-size: 13px; }
+  .token { background: var(--bg); border-radius: 8px; padding: 6px 10px; word-break: break-all; }
+  .muted { color: var(--muted); }
+
+  .item { display: flex; align-items: center; gap: 10px; padding: 8px; border: 1px solid var(--line);
+    border-radius: 11px; margin-bottom: 8px; background: var(--card); }
+  .item.drag { opacity: .4; }
+  .item.over { border-color: var(--accent); }
+  .handle { cursor: grab; color: var(--muted); padding: 0 4px; user-select: none; }
+  .meta { flex: 1; min-width: 0; }
+  .meta b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .meta span { font-size: 12.5px; color: var(--muted); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .test-res { font-size: 13px; padding: 6px 10px; border-radius: 8px; margin: 0 0 8px; white-space: pre-wrap; }
+  .test-res.ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .test-res.err { background: color-mix(in srgb, var(--err) 18%, transparent); color: var(--err); }
+
+  /* Same Stream Deck look as the device (preview.html), shown on a black swatch */
+  .swatch { background: #000; border-radius: 12px; padding: 12px; display: inline-flex; flex: none; }
+  .tile { --c: #444; width: 96px; aspect-ratio: 1 / 1; padding: 0; overflow: hidden;
+    border: 1px solid #262626; border-radius: 14%; background: #151515; color: #fff; flex: none; }
+  .tile .in { container-type: inline-size; width: 100%; height: 100%; padding: 8% 4% 6%;
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between; }
+  .tile.tinted { background: color-mix(in srgb, var(--c) 22%, #0d0d0d); border-color: color-mix(in srgb, var(--c) 45%, #1a1a1a); }
+  .tile .ic { flex: none; width: 100%; height: 58cqw; font-size: 44cqw; line-height: 58cqw; text-align: center; overflow: hidden; }
+  .tile .ic img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .tile .t { width: 100%; text-align: center; font-size: 12px; font-weight: 500; line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile.sm { width: 44px; border-radius: 10px; }
+  .tile.sm .in { padding: 3px; }
+  .tile.sm .ic { height: 100%; font-size: 24px; line-height: 36px; }
+  .tile.sm .t { display: none; }
+
+  .tabs { display: inline-flex; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+  .tabs button { border: 0; border-radius: 0; background: transparent; }
+  .tabs button.on { background: var(--accent); color: var(--accent-text); }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .chips button { padding: 3px 10px; font-size: 13px; border-radius: 99px; }
+  .hint { font-size: 12.5px; color: var(--muted); margin-top: 4px; }
+  .error { color: var(--err); font-size: 13.5px; margin-top: 10px; min-height: 1em; }
+  .hidden { display: none !important; }
+
+  .pill { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 12.5px; font-weight: 600;
+    background: color-mix(in srgb, var(--muted) 20%, transparent); color: var(--muted); }
+  .pill.ok { background: color-mix(in srgb, var(--ok) 18%, transparent); color: var(--ok); }
+  .pill.err { background: color-mix(in srgb, var(--err) 18%, transparent); color: var(--err); }
+  .netbox { border: 1px solid var(--line); border-radius: 11px; padding: 12px; margin-bottom: 12px; }
+  .netbox dl { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 8px 0 0; font-size: 13.5px; }
+  .netbox dt { color: var(--muted); }
+  .netbox dd { margin: 0; word-break: break-all; }
+  .netname { font: inherit; font-weight: 600; padding: 3px 7px; border-color: transparent; background: transparent; }
+  .netname:hover, .netname:focus { border-color: var(--line); background: var(--field); }
+  .warn { color: var(--muted); font-size: 12.5px; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<div class="wrap" id="keyGate" hidden>
+  <section class="card">
+    <h1>Chiave di amministrazione</h1>
+    <p class="lead" id="keyMsg">Apri l'admin con il comando <code>neondeck admin</code>.</p>
+    <p class="muted">In alternativa incolla qui la chiave stampata da <code>neondeck token --admin</code>.</p>
+    <form class="row" id="keyForm">
+      <input type="text" id="keyInput" class="grow" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Chiave admin">
+      <button class="primary" type="submit">Entra</button>
+    </form>
+  </section>
+</div>
+<div class="wrap" id="main">
+  <h1>Neondeck</h1>
+  <p class="lead">Configura i pulsanti del dispositivo. Questa pagina è accessibile solo da questo Mac.</p>
+
+  <section class="card" id="netCard">
+    <h2>Reti fidate</h2>
+    <div class="netbox">
+      <div class="row">
+        <b class="grow" id="netCurName">Rete sconosciuta</b>
+        <span class="pill" id="netPill">…</span>
+      </div>
+      <div class="error" id="netReason" style="margin:6px 0 0;min-height:0"></div>
+      <dl>
+        <dt>Gateway</dt><dd class="mono" id="netGw">-</dd>
+        <dt>MAC</dt><dd class="mono" id="netMac">-</dd>
+        <dt>Subnet</dt><dd class="mono" id="netSubnet">-</dd>
+        <dt>Accesso dalla rete</dt><dd id="netLan">-</dd>
+        <dt>Bonjour</dt><dd id="netBonjour">-</dd>
+      </dl>
+      <div id="netTrustBox" class="hidden" style="margin-top:12px">
+        <form class="row" id="netTrustForm">
+          <input type="text" id="netTrustName" class="grow" maxlength="64" autocomplete="off" placeholder="Casa, Ufficio, Hotspot…" aria-label="Nome della rete">
+          <button class="primary" type="submit">Considera fidata questa rete</button>
+        </form>
+        <p class="warn">Approva solo reti private che controlli: chiunque su una rete fidata può raggiungere il device con il token.</p>
+      </div>
+      <div class="error" id="netError"></div>
+    </div>
+    <div id="netList"></div>
+  </section>
+
+  <section class="card" id="infoCard">
+    <h2>Collegamento del dispositivo</h2>
+    <div class="row"><span class="muted">Indirizzo agent:</span><code id="lanUrl">…</code></div>
+    <div class="row" style="margin-top:8px">
+      <span class="muted">Token:</span>
+      <code class="token grow" id="token">…</code>
+      <button class="small" id="copyToken">Copia</button>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <a id="previewLink" href="#" target="_blank" rel="noopener">Apri anteprima del dispositivo</a>
+      <span class="muted">(aggiungi <code>&amp;frame=1</code> per il simulatore 800×480)</span>
+    </div>
+    <h2 style="margin-top:18px">Telecomando sul telefono</h2>
+    <p class="muted hidden" id="qrOff" style="margin-top:0">Il telefono non può collegarsi: rete non fidata.</p>
+    <div class="row" id="qrBox" style="align-items:flex-start;gap:16px">
+      <canvas id="qr" width="200" height="200" style="background:#fff;border-radius:8px;flex:none" aria-label="QR code per il telefono"></canvas>
+      <div class="grow">
+        <p class="muted" style="margin-top:0">Inquadra il QR code con il telefono (stessa rete Wi-Fi), poi su iPhone usa Condividi › Aggiungi alla schermata Home.</p>
+        <code class="token" id="phoneUrl" style="display:block"></code>
+        <div class="row" style="margin-top:8px"><button class="small" id="copyPhone">Copia link</button></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card hidden" id="netWarn">
+    <h2>Permesso Rete locale mancante</h2>
+    <p class="muted" style="margin:0" id="netWarnMsg"></p>
+  </section>
+
+  <section class="card" id="prefsCard">
+    <h2>Sessioni</h2>
+    <label class="row" style="margin:0;font-weight:400"><input type="checkbox" id="fShowAll"> Mostra tutte le sessioni iTerm2, non solo Claude Code</label>
+    <div class="hint">Ogni finestra, scheda e pannello diviso di iTerm2 diventa una tessera; le sessioni Claude Code mantengono la loro.</div>
+  </section>
+
+  <div class="grid2">
+    <section class="card">
+      <div class="row"><h2 class="grow" style="margin:0">Pulsanti</h2>
+        <button class="primary small" id="newBtn">Nuovo pulsante</button></div>
+      <p class="hint">Trascina le righe per riordinarle, oppure usa le frecce.</p>
+      <div id="list"></div>
+    </section>
+
+    <section class="card hidden" id="editor">
+      <h2 id="editorTitle">Nuovo pulsante</h2>
+      <div class="row" style="margin-bottom:6px">
+        <div class="swatch"><div class="tile" id="tilePreview"><div class="in"><div class="ic"></div><div class="t"></div></div></div></div>
+        <span class="muted">Anteprima</span>
+      </div>
+
+      <label for="fTitle">Titolo</label>
+      <input type="text" id="fTitle" maxlength="40">
+
+      <label>Icona</label>
+      <div class="tabs" id="iconTabs">
+        <button type="button" data-t="emoji" class="on">Emoji</button>
+        <button type="button" data-t="image">Immagine</button>
+      </div>
+      <div id="iconEmoji" style="margin-top:8px">
+        <input type="text" id="fEmoji" maxlength="16" placeholder="Es. 🛑">
+      </div>
+      <div id="iconImage" class="hidden row" style="margin-top:8px">
+        <input type="file" id="fFile" accept=".png,.jpg,.jpeg,.gif,.webp,.svg">
+        <span class="muted" id="fileName"></span>
+      </div>
+      <div class="hint hidden" id="imgHint">PNG, JPG, GIF, WebP o SVG, massimo 2 MB.</div>
+
+      <label for="fColor">Colore</label>
+      <div class="row">
+        <input type="color" id="fColor" value="#3a3f4b">
+        <label class="row" style="margin:0;font-weight:400"><input type="checkbox" id="fNoColor"> Nessun colore</label>
+      </div>
+
+      <label for="fType">Azione</label>
+      <select id="fType">
+        <option value="send_keys">Invia tasti alla sessione</option>
+        <option value="shell">Comando shell</option>
+        <option value="open_url">Apri URL</option>
+        <option value="focus_session">Vai alla sessione</option>
+      </select>
+
+      <div id="aSend">
+        <label>Tasti rapidi</label>
+        <div class="chips" id="chips"></div>
+        <label for="fText">Testo da inviare</label>
+        <textarea id="fText" spellcheck="false"></textarea>
+        <div class="hint">Sequenze di escape: <code>\e</code> Esc, <code>\r</code> Invio, <code>\n</code> a capo, <code>\t</code> Tab, <code>\x03</code> Ctrl+C, <code>\\</code> barra inversa.</div>
+        <label for="fTarget">Destinazione</label>
+        <select id="fTarget">
+          <option value="current">Sessione in primo piano (iTerm o VS Code)</option>
+          <option value="selected">Sessione selezionata sul device</option>
+        </select>
+      </div>
+      <div id="aShell" class="hidden">
+        <label for="fCmd">Comando</label>
+        <textarea id="fCmd" spellcheck="false"></textarea>
+        <div class="hint">Eseguito con <code>/bin/zsh -lc</code> su questo Mac.</div>
+        <label for="fTimeout">Timeout (secondi)</label>
+        <input type="number" id="fTimeout" min="1" max="600" value="10">
+      </div>
+      <div id="aUrl" class="hidden">
+        <label for="fUrl">URL</label>
+        <input type="text" id="fUrl" placeholder="https://…">
+      </div>
+      <div id="aFocus" class="hidden">
+        <label for="fMatch">Nome o progetto contiene</label>
+        <input type="text" id="fMatch" placeholder="Es. hldoctor">
+        <div class="hint">Viene portata in primo piano la prima sessione che corrisponde (maiuscole e minuscole indifferenti).</div>
+      </div>
+
+      <div class="error" id="formError"></div>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" id="saveBtn">Salva</button>
+        <button id="cancelBtn">Annulla</button>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const ACTION_LABEL = { send_keys: "Invia tasti", shell: "Comando shell", open_url: "Apri URL", focus_session: "Vai alla sessione" };
+let buttons = [];
+let editing = null;        // button id, or "" for new, or null when closed
+let iconType = "emoji";
+let uploadedPath = "";     // image path already stored for the current editor
+const confirming = new Set();
+const testResults = new Map();
+
+// The admin key arrives in the URL hash from `neondeck admin`; keep it only in sessionStorage.
+let adminKey = "";
+try {
+  const m = location.hash.match(/[#&]key=([^&]+)/);
+  if (m) {
+    adminKey = decodeURIComponent(m[1]);
+    sessionStorage.setItem("neondeckAdminKey", adminKey);
+    history.replaceState(null, "", location.pathname + location.search);
+  } else adminKey = sessionStorage.getItem("neondeckAdminKey") || "";
+} catch { /* storage unavailable: the key stays in memory */ }
+
+function needKey(msg) {
+  $("main").hidden = true;
+  $("keyGate").hidden = false;
+  if (msg) $("keyMsg").textContent = msg;
+  $("keyInput").focus();
+}
+$("keyForm").onsubmit = (e) => {
+  e.preventDefault();
+  const v = $("keyInput").value.trim();
+  if (!v) return;
+  try { sessionStorage.setItem("neondeckAdminKey", v); } catch {}
+  adminKey = v;
+  location.reload();
+};
+
+async function api(method, url, data) {
+  const opt = { method, headers: { "X-Admin-Key": adminKey } };
+  if (data !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(data); }
+  const r = await fetch(url, opt);
+  const j = await r.json().catch(() => ({}));
+  if (r.status === 401) { needKey("Apri l'admin con il comando neondeck admin"); throw new Error("Chiave admin mancante o non valida"); }
+  if (!r.ok) throw new Error(j.error || `Errore ${r.status}`);
+  return j;
+}
+
+function mk(tag, cls, text) {
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+// ---- escape conversion for send_keys
+function unescapeText(s) {
+  return s.replace(/\\(x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|e|r|n|t|\\)/g, (_, k) => {
+    if (k === "e") return "\x1b";
+    if (k === "r") return "\r";
+    if (k === "n") return "\n";
+    if (k === "t") return "\t";
+    if (k === "\\") return "\\";
+    return String.fromCharCode(parseInt(k.slice(1), 16));
+  });
+}
+function escapeText(s) {
+  let out = "";
+  for (const ch of s) {
+    const c = ch.codePointAt(0);
+    if (ch === "\\") out += "\\\\";
+    else if (c === 0x1b) out += "\\e";
+    else if (ch === "\r") out += "\\r";
+    else if (ch === "\n") out += "\\n";
+    else if (ch === "\t") out += "\\t";
+    else if (c < 0x20 || c === 0x7f) out += "\\x" + c.toString(16).padStart(2, "0");
+    else out += ch;
+  }
+  return out;
+}
+
+// ---- tile rendering (shared by list and editor)
+function fillTile(tile, icon, title, color) {
+  tile.style.setProperty("--c", color || "#444");
+  tile.classList.toggle("tinted", !!color);
+  const ic = tile.querySelector(".ic");
+  ic.replaceChildren();
+  if (icon.type === "image" && icon.value) {
+    const img = document.createElement("img");
+    img.src = "/" + icon.value; img.alt = "";
+    ic.append(img);
+  } else ic.textContent = icon.value || "";
+  tile.querySelector(".t").textContent = title || "";
+}
+function makeTile(b, small) {
+  const t = mk("div", "tile" + (small ? " sm" : ""));
+  const inner = mk("div", "in");
+  inner.append(mk("div", "ic"), mk("div", "t"));
+  t.append(inner);
+  fillTile(t, b.icon, b.title, b.color);
+  return t;
+}
+
+function summary(b) {
+  const a = b.action;
+  if (a.type === "send_keys") return `Invia: ${escapeText(a.text)} → ${a.target === "selected" ? "sessione selezionata" : "sessione in primo piano"}`;
+  if (a.type === "shell") return `Shell: ${a.command.split("\n")[0]}`;
+  if (a.type === "open_url") return `Apri: ${a.url}`;
+  return `Vai alla sessione: ${a.match}`;
+}
+
+// ---- list
+function renderList() {
+  const box = $("list");
+  box.replaceChildren();
+  if (!buttons.length) box.append(mk("p", "muted", "Nessun pulsante configurato."));
+  buttons.forEach((b, i) => {
+    const item = mk("div", "item");
+    item.draggable = true;
+    item.dataset.i = i;
+    item.append(mk("span", "handle", "⠿"), makeTile(b, true));
+    const meta = mk("div", "meta");
+    meta.append(mk("b", "", b.title), mk("span", "", summary(b)));
+    item.append(meta);
+
+    const up = mk("button", "small", "↑"); up.title = "Sposta su"; up.disabled = i === 0;
+    up.onclick = () => move(i, i - 1);
+    const dn = mk("button", "small", "↓"); dn.title = "Sposta giù"; dn.disabled = i === buttons.length - 1;
+    dn.onclick = () => move(i, i + 1);
+    const test = mk("button", "small", "Prova"); test.onclick = () => testButton(b);
+    const edit = mk("button", "small", "Modifica"); edit.onclick = () => openEditor(b);
+    item.append(up, dn, test, edit);
+
+    if (confirming.has(b.id)) {
+      const yes = mk("button", "small danger", "Elimina");
+      yes.onclick = async () => { confirming.delete(b.id); await remove(b.id); };
+      const no = mk("button", "small", "Annulla");
+      no.onclick = () => { confirming.delete(b.id); renderList(); };
+      item.append(mk("span", "muted", "Sicuro?"), yes, no);
+    } else {
+      const del = mk("button", "small danger", "Elimina");
+      del.onclick = () => { confirming.add(b.id); renderList(); };
+      item.append(del);
+    }
+
+    item.addEventListener("dragstart", (e) => { item.classList.add("drag"); e.dataTransfer.setData("text/plain", String(i)); e.dataTransfer.effectAllowed = "move"; });
+    item.addEventListener("dragend", () => item.classList.remove("drag"));
+    item.addEventListener("dragover", (e) => { e.preventDefault(); item.classList.add("over"); });
+    item.addEventListener("dragleave", () => item.classList.remove("over"));
+    item.addEventListener("drop", (e) => {
+      e.preventDefault();
+      const from = parseInt(e.dataTransfer.getData("text/plain"), 10);
+      if (!Number.isNaN(from)) move(from, i);
+    });
+
+    const wrap = mk("div");
+    wrap.append(item);
+    const tr = testResults.get(b.id);
+    if (tr) wrap.append(mk("div", "test-res " + (tr.ok ? "ok" : "err"), (tr.ok ? "Riuscito: " : "Errore: ") + tr.detail));
+    box.append(wrap);
+  });
+}
+
+async function move(from, to) {
+  if (to < 0 || to >= buttons.length || from === to) return;
+  const next = buttons.slice();
+  next.splice(to, 0, next.splice(from, 1)[0]);
+  try {
+    const r = await api("PUT", "/api/admin/buttons", { buttons: next });
+    buttons = r.buttons;
+  } catch (e) { showFormError(e.message); }
+  renderList();
+}
+
+async function remove(id) {
+  try { await api("DELETE", "/api/admin/buttons/" + id); buttons = buttons.filter((b) => b.id !== id); }
+  catch (e) { testResults.set(id, { ok: false, detail: e.message }); }
+  if (editing === id) closeEditor();
+  renderList();
+}
+
+async function testButton(b) {
+  testResults.set(b.id, { ok: true, detail: "in esecuzione…" });
+  renderList();
+  try { testResults.set(b.id, await api("POST", `/api/admin/buttons/${b.id}/test`, {})); }
+  catch (e) { testResults.set(b.id, { ok: false, detail: e.message }); }
+  renderList();
+  setTimeout(() => { testResults.delete(b.id); renderList(); }, 8000);
+}
+
+// ---- editor
+const CHIPS = [["Esc", "\\e"], ["Invio", "\\r"], ["Ctrl+C", "\\x03"], ["Shift+Tab", "\\e[Z"], ["Tab", "\\t"], ["↑", "\\e[A"], ["↓", "\\e[B"]];
+for (const [label, seq] of CHIPS) {
+  const c = mk("button", "", label); c.type = "button";
+  c.onclick = () => {
+    const ta = $("fText");
+    const s = ta.selectionStart ?? ta.value.length, e = ta.selectionEnd ?? s;
+    ta.value = ta.value.slice(0, s) + seq + ta.value.slice(e);
+    ta.focus(); ta.selectionStart = ta.selectionEnd = s + seq.length;
+  };
+  $("chips").append(c);
+}
+
+function setIconTab(t) {
+  iconType = t;
+  document.querySelectorAll("#iconTabs button").forEach((b) => b.classList.toggle("on", b.dataset.t === t));
+  $("iconEmoji").classList.toggle("hidden", t !== "emoji");
+  $("iconImage").classList.toggle("hidden", t !== "image");
+  $("imgHint").classList.toggle("hidden", t !== "image");
+  updatePreview();
+}
+document.querySelectorAll("#iconTabs button").forEach((b) => (b.onclick = () => setIconTab(b.dataset.t)));
+
+function setActionUi() {
+  const t = $("fType").value;
+  $("aSend").classList.toggle("hidden", t !== "send_keys");
+  $("aShell").classList.toggle("hidden", t !== "shell");
+  $("aUrl").classList.toggle("hidden", t !== "open_url");
+  $("aFocus").classList.toggle("hidden", t !== "focus_session");
+}
+$("fType").onchange = setActionUi;
+
+function currentIcon() {
+  return iconType === "emoji" ? { type: "emoji", value: $("fEmoji").value.trim() } : { type: "image", value: uploadedPath };
+}
+function currentColor() { return $("fNoColor").checked ? undefined : $("fColor").value; }
+function updatePreview() { fillTile($("tilePreview"), currentIcon(), $("fTitle").value.trim() || "Titolo", currentColor()); }
+["fTitle", "fEmoji", "fColor", "fNoColor"].forEach((id) => ($(id).oninput = updatePreview));
+$("fNoColor").onchange = updatePreview;
+
+$("fFile").onchange = async () => {
+  const f = $("fFile").files[0];
+  if (!f) return;
+  showFormError("");
+  if (f.size > 2 * 1024 * 1024) { showFormError("File troppo grande (massimo 2 MB)"); return; }
+  const fd = new FormData(); fd.append("file", f);
+  try {
+    const r = await fetch("/api/admin/icons", { method: "POST", body: fd, headers: { "X-Admin-Key": adminKey } });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error || "Caricamento non riuscito");
+    uploadedPath = j.path; $("fileName").textContent = f.name; updatePreview();
+  } catch (e) { showFormError(e.message); }
+};
+
+function showFormError(m) { $("formError").textContent = m; }
+
+function openEditor(b) {
+  editing = b ? b.id : "";
+  $("editorTitle").textContent = b ? "Modifica pulsante" : "Nuovo pulsante";
+  const a = b ? b.action : { type: "send_keys", text: "", target: "current" };
+  $("fTitle").value = b ? b.title : "";
+  $("fEmoji").value = b && b.icon.type === "emoji" ? b.icon.value : "";
+  uploadedPath = b && b.icon.type === "image" ? b.icon.value : "";
+  $("fileName").textContent = uploadedPath ? "(immagine attuale)" : "";
+  $("fFile").value = "";
+  $("fNoColor").checked = !(b && b.color);
+  $("fColor").value = (b && b.color) || "#3a3f4b";
+  $("fType").value = a.type;
+  $("fText").value = a.type === "send_keys" ? escapeText(a.text) : "";
+  $("fTarget").value = a.target || "current";
+  $("fCmd").value = a.command || "";
+  $("fTimeout").value = a.timeout || 10;
+  $("fUrl").value = a.url || "";
+  $("fMatch").value = a.match || "";
+  showFormError("");
+  setActionUi();
+  setIconTab(b ? b.icon.type : "emoji");
+  $("editor").classList.remove("hidden");
+  $("fTitle").focus();
+}
+function closeEditor() { editing = null; $("editor").classList.add("hidden"); }
+
+function collect() {
+  const t = $("fType").value;
+  let action;
+  if (t === "send_keys") action = { type: t, text: unescapeText($("fText").value), target: $("fTarget").value };
+  else if (t === "shell") action = { type: t, command: $("fCmd").value, timeout: parseInt($("fTimeout").value, 10) || 10 };
+  else if (t === "open_url") action = { type: t, url: $("fUrl").value.trim() };
+  else action = { type: t, match: $("fMatch").value.trim() };
+  const out = { title: $("fTitle").value.trim(), icon: currentIcon(), action };
+  const color = currentColor();
+  if (color) out.color = color;
+  return out;
+}
+
+$("saveBtn").onclick = async () => {
+  showFormError("");
+  const data = collect();
+  if (data.icon.type === "image" && !data.icon.value) { showFormError("Carica un'immagine oppure scegli un'emoji"); return; }
+  try {
+    if (editing) {
+      const r = await api("PUT", "/api/admin/buttons/" + editing, data);
+      buttons = buttons.map((b) => (b.id === r.id ? r : b));
+    } else {
+      buttons.push(await api("POST", "/api/admin/buttons", data));
+    }
+    closeEditor(); renderList();
+  } catch (e) { showFormError(e.message); }
+};
+$("cancelBtn").onclick = closeEditor;
+$("newBtn").onclick = () => openEditor(null);
+
+// ---- QR code (local encoder, no external libraries)
+// Minimal QR encoder: byte mode, EC level M, versions 1-10, mask 0. Returns a boolean matrix.
+function makeQR(text) {
+  const bytes = Array.from(new TextEncoder().encode(text));
+  // [dataCodewords, ecPerBlock, blocks(group1 count, group1 data, group2 count, group2 data)]
+  const T = [null,
+    [16, 10, 1, 16, 0, 0], [28, 16, 1, 28, 0, 0], [44, 26, 1, 44, 0, 0], [64, 18, 2, 32, 0, 0],
+    [86, 24, 2, 43, 0, 0], [108, 16, 4, 27, 0, 0], [124, 18, 4, 31, 0, 0], [154, 22, 2, 38, 2, 39],
+    [182, 22, 3, 36, 2, 37], [216, 26, 4, 43, 1, 44]];
+  const ALIGN = [null, [], [6, 18], [6, 22], [6, 26], [6, 30], [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50]];
+  let v = 1;
+  for (; v <= 10; v++) {
+    const need = 4 + (v < 10 ? 8 : 16) + 8 * bytes.length;
+    if (T[v][0] * 8 >= need) break;
+  }
+  if (v > 10) throw new Error("Testo troppo lungo per il QR code");
+  const [total, ecLen, g1n, g1d, g2n, g2d] = T[v];
+
+  const bits = [];
+  const put = (val, n) => { for (let i = n - 1; i >= 0; i--) bits.push((val >> i) & 1); };
+  put(4, 4); put(bytes.length, v < 10 ? 8 : 16);
+  bytes.forEach((b) => put(b, 8));
+  for (let i = 0; i < 4 && bits.length < total * 8; i++) bits.push(0);
+  while (bits.length % 8) bits.push(0);
+  const data = [];
+  for (let i = 0; i < bits.length; i += 8) data.push(parseInt(bits.slice(i, i + 8).join(""), 2));
+  for (let pad = 0; data.length < total; pad ^= 1) data.push(pad ? 0x11 : 0xec);
+
+  // Reed-Solomon over GF(256)
+  const EXP = new Array(512), LOG = new Array(256);
+  for (let i = 0, x = 1; i < 255; i++) { EXP[i] = x; LOG[x] = i; x <<= 1; if (x & 256) x ^= 0x11d; }
+  for (let i = 255; i < 512; i++) EXP[i] = EXP[i - 255];
+  let gen = [1];
+  for (let i = 0; i < ecLen; i++) {
+    const next = new Array(gen.length + 1).fill(0);
+    gen.forEach((c, j) => { next[j] ^= c; next[j + 1] ^= c ? EXP[LOG[c] + i] : 0; });
+    gen = next;
+  }
+  const rs = (block) => {
+    const r = block.concat(new Array(ecLen).fill(0));
+    for (let i = 0; i < block.length; i++) {
+      const c = r[i];
+      if (c) for (let j = 0; j < gen.length; j++) r[i + j] ^= gen[j] ? EXP[LOG[c] + LOG[gen[j]]] : 0;
+    }
+    return r.slice(block.length);
+  };
+  const blocks = []; let pos = 0;
+  for (let i = 0; i < g1n + g2n; i++) {
+    const len = i < g1n ? g1d : g2d;
+    const d = data.slice(pos, pos + len); pos += len;
+    blocks.push({ d, e: rs(d) });
+  }
+  const out = [];
+  for (let i = 0; i < Math.max(g1d, g2d); i++) blocks.forEach((b) => { if (i < b.d.length) out.push(b.d[i]); });
+  for (let i = 0; i < ecLen; i++) blocks.forEach((b) => out.push(b.e[i]));
+
+  // Matrix
+  const n = 17 + 4 * v;
+  const m = Array.from({ length: n }, () => new Array(n).fill(null));
+  const finder = (r0, c0) => {
+    for (let r = -1; r <= 7; r++) for (let c = -1; c <= 7; c++) {
+      const rr = r0 + r, cc = c0 + c;
+      if (rr < 0 || rr >= n || cc < 0 || cc >= n) continue;
+      m[rr][cc] = (r >= 0 && r <= 6 && (c === 0 || c === 6)) || (c >= 0 && c <= 6 && (r === 0 || r === 6)) ||
+        (r >= 2 && r <= 4 && c >= 2 && c <= 4);
+    }
+  };
+  finder(0, 0); finder(n - 7, 0); finder(0, n - 7);
+  const al = ALIGN[v];
+  for (const r of al) for (const c of al) {
+    if (m[r][c] !== null) continue;
+    for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++)
+      m[r + i][c + j] = i === -2 || i === 2 || j === -2 || j === 2 || (i === 0 && j === 0);
+  }
+  for (let i = 8; i < n - 8; i++) { if (m[i][6] === null) m[i][6] = i % 2 === 0; if (m[6][i] === null) m[6][i] = i % 2 === 0; }
+  const bch = (d, poly, plen) => { let x = d; const hl = (q) => 32 - Math.clz32(q);
+    while (hl(x) >= plen) x ^= poly << (hl(x) - plen); return x; };
+  // format info (EC level M = 00, mask 0)
+  const fdata = 0;
+  const fbits = ((fdata << 10) | bch(fdata << 10, 0x537, 11)) ^ 0x5412;
+  for (let i = 0; i < 15; i++) {
+    const b = ((fbits >> i) & 1) === 1;
+    if (i < 6) m[i][8] = b; else if (i < 8) m[i + 1][8] = b; else m[n - 15 + i][8] = b;
+    if (i < 8) m[8][n - i - 1] = b; else if (i < 9) m[8][15 - i] = b; else m[8][14 - i] = b;
+  }
+  m[n - 8][8] = true;
+  if (v >= 7) {
+    const vbits = (v << 12) | bch(v << 12, 0x1f25, 13);
+    for (let i = 0; i < 18; i++) {
+      const b = ((vbits >> i) & 1) === 1;
+      m[Math.floor(i / 3)][(i % 3) + n - 11] = b;
+      m[(i % 3) + n - 11][Math.floor(i / 3)] = b;
+    }
+  }
+  // data placement, zig-zag
+  let inc = -1, row = n - 1, bi = 7, by = 0;
+  for (let col = n - 1; col > 0; col -= 2) {
+    if (col === 6) col--;
+    for (;;) {
+      for (let c = 0; c < 2; c++) {
+        if (m[row][col - c] === null) {
+          let dark = by < out.length ? ((out[by] >>> bi) & 1) === 1 : false;
+          if ((row + col - c) % 2 === 0) dark = !dark;
+          m[row][col - c] = dark;
+          if (--bi < 0) { by++; bi = 7; }
+        }
+      }
+      row += inc;
+      if (row < 0 || row >= n) { row -= inc; inc = -inc; break; }
+    }
+  }
+  return m;
+}
+
+function drawQR(canvas, text) {
+  const m = makeQR(text), n = m.length, quiet = 4;
+  const scale = Math.floor(canvas.width / (n + 2 * quiet));
+  const off = Math.floor((canvas.width - n * scale) / 2);
+  const g = canvas.getContext("2d");
+  g.fillStyle = "#fff"; g.fillRect(0, 0, canvas.width, canvas.height);
+  g.fillStyle = "#000";
+  for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (m[r][c]) g.fillRect(off + c * scale, off + r * scale, scale, scale);
+}
+
+// ---- device info
+async function loadInfo() {
+  const i = await api("GET", "/api/admin/info");
+  const host = i.lan_ips[0] || "127.0.0.1";
+  $("lanUrl").textContent = `http://${host}:${i.port}`;
+  $("token").textContent = i.token;
+  $("previewLink").href = i.preview_url.replace(/^http:\/\/[^/]+/, location.origin);
+  $("phoneUrl").textContent = i.preview_url;
+  const lanOn = !!i.lan_listening;
+  $("qrBox").classList.toggle("hidden", !lanOn);
+  $("qrOff").classList.toggle("hidden", lanOn);
+  if (lanOn) drawQR($("qr"), i.preview_url);
+  $("copyPhone").onclick = async () => {
+    try { await navigator.clipboard.writeText(i.preview_url); $("copyPhone").textContent = "Copiato"; }
+    catch { $("copyPhone").textContent = "Copia non riuscita"; }
+    setTimeout(() => ($("copyPhone").textContent = "Copia link"), 1500);
+  };
+  $("fShowAll").checked = i.show_all_iterm !== false;
+  $("fShowAll").onchange = async (e) => {
+    try { await api("PUT", "/api/admin/settings", { show_all_iterm: e.target.checked }); }
+    catch (err) { e.target.checked = !e.target.checked; alert(err.message); }
+  };
+  $("netWarn").classList.toggle("hidden", i.network_reason !== "localnet_permission");
+  if (i.network_reason === "localnet_permission") {
+    $("netWarnMsg").textContent = "macOS blocca l'accesso alla rete locale all'interprete Python dell'agent: "
+      + "Impostazioni di Sistema → Privacy e sicurezza → Rete locale → abilita il binario Python, poi esegui neondeck restart. "
+      + "Finché manca il permesso l'ascolto in LAN resta spento.";
+  }
+  $("copyToken").onclick = async () => {
+    try { await navigator.clipboard.writeText(i.token); $("copyToken").textContent = "Copiato"; }
+    catch { $("copyToken").textContent = "Copia non riuscita"; }
+    setTimeout(() => ($("copyToken").textContent = "Copia"), 1500);
+  };
+}
+
+// ---- trusted networks
+let netEditing = false;
+
+function renderNetworks(st) {
+  const cur = st.current;
+  $("netCurName").textContent = cur.name || "Rete sconosciuta";
+  const pill = $("netPill");
+  pill.className = "pill " + (cur.mac ? (cur.trusted ? "ok" : "") : "err");
+  pill.textContent = cur.mac ? (cur.trusted ? "Fidata" : "Non fidata") : "Non riconoscibile";
+  $("netReason").textContent = cur.reason || "";
+  $("netGw").textContent = cur.gateway || "-";
+  $("netMac").textContent = cur.mac || "-";
+  $("netSubnet").textContent = cur.subnet || "-";
+  $("netLan").textContent = st.lan.listening ? `Accesso dalla rete attivo su ${st.lan.ip}:${st.lan.port}` : "Accesso dalla rete disattivato";
+  $("netBonjour").textContent = st.bonjour === null ? "-" : st.bonjour ? "Attivo" : "Non attivo (permesso Rete locale?)";
+  $("netTrustBox").classList.toggle("hidden", !(cur.mac && !cur.trusted));
+
+  if (netEditing) return;  // do not clobber an edit or a pending confirmation with the periodic refresh
+  const list = $("netList");
+  list.replaceChildren();
+  if (!st.trusted.length) list.append(mk("p", "muted", "Nessuna rete fidata: il dispositivo non può collegarsi dalla rete."));
+  for (const n of st.trusted) {
+    const row = mk("div", "item");
+    const meta = mk("div", "meta");
+    const name = mk("input", "netname");
+    name.type = "text"; name.value = n.name || ""; name.maxLength = 64; name.setAttribute("aria-label", "Nome della rete");
+    let saved = name.value;
+    const save = async () => {
+      const v = name.value.trim();
+      netEditing = false;
+      if (!v || v === saved) { name.value = saved; return; }
+      try { renderNetworks(await api("PATCH", "/api/admin/networks/" + encodeURIComponent(n.mac), { name: v })); }
+      catch (e) { name.value = saved; $("netError").textContent = e.message; }
+    };
+    name.onfocus = () => { netEditing = true; };
+    name.onblur = save;
+    name.onkeydown = (e) => { if (e.key === "Enter") name.blur(); else if (e.key === "Escape") { name.value = saved; name.blur(); } };
+    meta.append(name, mk("span", "mono", `${n.mac} · ${n.subnet || "-"} · aggiunta il ${n.added || "?"}`));
+    row.append(meta);
+    if (cur.mac && cur.mac === n.mac) row.append(mk("span", "pill ok", "attuale"));
+    const del = mk("button", "small danger", "Rimuovi");
+    del.onclick = () => {
+      netEditing = true;
+      const yes = mk("button", "small danger", "Conferma");
+      const no = mk("button", "small", "Annulla");
+      no.onclick = () => { netEditing = false; loadNetworks(); };
+      yes.onclick = async () => {
+        netEditing = false;
+        try { renderNetworks(await api("DELETE", "/api/admin/networks/" + encodeURIComponent(n.mac))); loadInfo(); }
+        catch (e) { $("netError").textContent = e.message; loadNetworks(); }
+      };
+      del.replaceWith(yes, no);
+    };
+    row.append(del);
+    list.append(row);
+  }
+}
+
+async function loadNetworks() {
+  try { renderNetworks(await api("GET", "/api/admin/networks")); $("netError").textContent = ""; }
+  catch (e) { $("netError").textContent = e.message; }
+}
+
+$("netTrustForm").onsubmit = async (e) => {
+  e.preventDefault();
+  try {
+    renderNetworks(await api("POST", "/api/admin/networks", { name: $("netTrustName").value.trim() || undefined }));
+    $("netTrustName").value = ""; $("netError").textContent = "";
+    loadInfo();
+  } catch (err) { $("netError").textContent = err.message; }
+};
+
+setInterval(() => {
+  if (document.visibilityState === "visible" && adminKey && !$("main").hidden) { loadNetworks(); loadInfo().catch(() => {}); }
+}, 10000);
+
+(async () => {
+  if (!adminKey) { needKey(); return; }
+  try {
+    await loadInfo();
+    await loadNetworks();
+    buttons = (await api("GET", "/api/admin/buttons")).buttons;
+  } catch (e) {
+    if ($("main").hidden) return;
+    $("list").textContent = "Impossibile contattare l'agent: " + e.message; return;
+  }
+  renderList();
+})();
+</script>
+</body>
+</html>

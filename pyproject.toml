@@ -1,0 +1,47 @@
+[project]
+name = "neondeck"
+dynamic = ["version"]
+description = "A Stream Deck-style remote for your Claude Code sessions: a macOS agent with a touch UI for phones and Raspberry Pi"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Matteo Frigé" }]
+requires-python = ">=3.12"
+keywords = ["claude-code", "stream-deck", "iterm2", "vscode", "remote", "macos", "raspberry-pi"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Environment :: Web Environment",
+    "Intended Audience :: Developers",
+    "Operating System :: MacOS :: MacOS X",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development",
+    "Topic :: Utilities",
+]
+dependencies = ["aiohttp>=3.9", "iterm2>=2.7", "zeroconf>=0.130", "segno>=1.6"]
+
+[project.urls]
+Homepage = "https://github.com/matteofrige/neondeck"
+Repository = "https://github.com/matteofrige/neondeck"
+Issues = "https://github.com/matteofrige/neondeck/issues"
+
+[project.scripts]
+neondeck = "neondeck.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/neondeck/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/neondeck"]
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

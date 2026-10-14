@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+dist/
+build/
+*.vsix
+.DS_Store
+.claude/
+.pytest_cache/
