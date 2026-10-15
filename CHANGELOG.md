@@ -2,6 +2,15 @@
 
 All notable changes to this project. Versions before 0.3.0 were released under the name *Claude Deck*.
 
+## 0.7.0
+
+- Optional HTTPS with a local CA: `neondeck tls enable` creates a private CA (EC P-256, 10 years) and a server certificate for `neondeck.local` and the computer's Bonjour name. The CA is name-constrained (critical): it can only sign `.local` names and private/loopback IP ranges, so a stolen CA key cannot impersonate public sites. The default stays plain HTTP. Other commands: `neondeck tls [status|disable|rotate]`.
+- The server certificate (397 days) is renewed automatically when it is close to expiry, when the LAN IP or the names change, or when the CA is rotated.
+- Setup page on port 8786 (plain HTTP, same network checks): iOS configuration profile (`.mobileconfig`) and a `.crt` for Android; any other path on that port redirects to the HTTPS address. The Bonjour record and the admin info carry the TLS state.
+- Live camera view for scanning the QR code when the phone page is served over HTTPS (browsers only allow `getUserMedia` on secure origins); the photo-based scan stays as a fallback.
+- Phone layout: the side-by-side layout now applies in every landscape orientation (before, only from 560 px wide).
+- New dependency: `cryptography`.
+
 ## 0.6.0
 
 - Stable phone address `http://neondeck.local:8787`, announced over mDNS (configurable with `lan_hostname`). The installed PWA keeps its origin, and its token, across networks and IP changes. The QR code uses the name; the IP URL stays available as a fallback (`neondeck qr`, admin panel).

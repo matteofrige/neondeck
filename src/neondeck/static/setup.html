@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050505">
+<title>Neondeck · Certificato</title>
+<style>
+:root {
+  color-scheme: dark;
+  --ground: #050505; --panel: #0c0b09; --unlit: #1d1a14; --amber: #ffb000; --amber-dim: #6b4a00;
+  --led: #e8eefc; --led-mid: rgba(232,238,252,.62); --led-low: rgba(232,238,252,.32);
+  --magenta: #ff2e88; --ok: #36e07a; --err: #ff4033; --rule: #1a1814;
+  --prose: #cfcabf; --prose-2: #8f8a80;
+  --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --mono: ui-monospace, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+html { background: var(--ground); -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--ground); color: var(--prose); font: 16px/1.5 var(--sans);
+  padding: max(20px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(32px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); }
+main { max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+h1 { margin: 0; font: 700 clamp(26px, 9vw, 40px)/1 var(--mono); letter-spacing: .12em; color: var(--magenta); }
+h2 { margin: 0; font-size: 13px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: var(--led-mid); }
+p { margin: 0; }
+code { font-family: var(--mono); font-size: .9em; background: #000; padding: 1px 6px; border-radius: 3px; }
+:focus-visible { outline: 2px solid var(--magenta); outline-offset: 2px; }
+.lead { color: var(--prose); }
+.card { border: 1px solid var(--rule); border-radius: 6px; background-color: var(--panel); padding: 20px 18px;
+  background-image: radial-gradient(circle, var(--unlit) 0 38%, transparent 42%); background-size: 6px 6px; }
+.warnbox { border: 1px solid var(--amber); border-radius: 6px; padding: 14px 16px; color: var(--amber); background: rgba(255,176,0,.07); }
+.warnbox[hidden] { display: none; }
+ol.steps { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 22px; counter-reset: s; }
+ol.steps > li { counter-increment: s; position: relative; padding-left: 52px; display: flex; flex-direction: column; gap: 10px; }
+ol.steps > li::before { content: counter(s); position: absolute; left: 0; top: -2px; width: 38px; height: 38px; border-radius: 6px;
+  display: grid; place-items: center; font: 700 22px/1 var(--mono); color: var(--led); border: 1px solid var(--led-low); background: #000; }
+ol.steps b { color: var(--led); font-weight: 600; }
+.step-title { font-size: 18px; font-weight: 600; color: var(--led); line-height: 1.3; }
+.btn { display: flex; align-items: center; justify-content: center; min-height: 56px; padding: 12px 18px; border-radius: 6px;
+  background: var(--led); color: #000; text-decoration: none; font-weight: 700; font-size: 17px; text-align: center; }
+.btn:active { opacity: .7; }
+.btn.magenta { background: var(--magenta); color: #000; }
+.key { border: 1px solid var(--magenta); border-radius: 6px; padding: 12px 14px; background: rgba(255,46,136,.08); }
+.key strong { color: var(--magenta); }
+details { margin-top: 0; }
+summary { min-height: 56px; display: flex; align-items: center; cursor: pointer; font-size: 17px; font-weight: 600; color: var(--led); list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary::after { content: "+"; margin-left: auto; font: 700 24px/1 var(--mono); color: var(--led-mid); }
+details[open] summary::after { content: "–"; }
+details .body { display: flex; flex-direction: column; gap: 12px; padding-bottom: 4px; }
+.small { font-size: 14px; color: var(--prose-2); }
+.fp { font: 12px/1.5 var(--mono); color: var(--prose-2); word-break: break-all; }
+@media (max-height: 460px) { .card { padding: 14px; } main { gap: 12px; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>NEONDECK</h1>
+  <p class="lead">Questa pagina installa il certificato che permette al telefono di collegarsi in HTTPS: connessione cifrata e fotocamera live per il QR. Va fatto una volta sola per telefono.</p>
+
+  <div class="warnbox" id="iosWarn" hidden>Su iPhone e iPad i profili si installano solo da <b>Safari</b>. Apri questa pagina in Safari per continuare.</div>
+
+  <section class="card">
+    <h2>iPhone / iPad</h2>
+    <ol class="steps">
+      <li>
+        <span class="step-title">Scarica il profilo</span>
+        <a class="btn" href="/neondeck-ca.mobileconfig">Scarica il profilo</a>
+        <p>Quando Safari lo chiede, tocca <b>Consenti</b>.</p>
+      </li>
+      <li>
+        <span class="step-title">Installa il profilo</span>
+        <p>Apri <b>Impostazioni</b> › <b>Profilo scaricato</b> (in alto) › <b>Installa</b> › inserisci il codice del telefono › <b>Installa</b>.</p>
+      </li>
+      <li>
+        <span class="step-title">Attiva la fiducia nel certificato</span>
+        <div class="key"><strong>È il passaggio che si dimentica più spesso: senza questo HTTPS non funziona.</strong></div>
+        <p>Apri <b>Impostazioni</b> › <b>Generali</b> › <b>Info</b> › <b>Impostazioni certificati attendibili</b> e attiva <b>Neondeck Local CA</b>.</p>
+      </li>
+      <li>
+        <span class="step-title">Apri Neondeck</span>
+        <a class="btn magenta" href="__HTTPS_URL__">Apri Neondeck</a>
+        <p>Tocca <b>ABBINA</b> e approva il codice sul computer, poi <b>Condividi</b> › <b>Aggiungi a Home</b>.</p>
+        <p class="small">Se avevi già l'app Neondeck sulla Home in http, eliminala prima.</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="card">
+    <details>
+      <summary>Android</summary>
+      <div class="body">
+        <a class="btn" href="/neondeck-ca.pem">Scarica il certificato</a>
+        <p>Apri <b>Impostazioni</b> › <b>Sicurezza e privacy</b> › <b>Altre impostazioni di sicurezza</b> › <b>Crittografia e credenziali</b> › <b>Installa un certificato</b> › <b>Certificato CA</b> e scegli il file scaricato.</p>
+        <p class="small">I nomi delle voci variano da produttore a produttore.</p>
+        <p>Poi apri il link HTTPS:</p>
+        <a class="btn magenta" href="__HTTPS_URL__">Apri Neondeck</a>
+      </div>
+    </details>
+  </section>
+
+  <section>
+    <h2>Impronta del certificato</h2>
+    <p class="fp" style="margin-top:8px">__CA_FP__</p>
+    <p class="small" style="margin-top:6px">Puoi confrontarla con <code>neondeck tls status</code> sul computer.</p>
+  </section>
+</main>
+<script>
+(function () {
+  var ua = navigator.userAgent || "";
+  var ios = /iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1);
+  if (ios && /CriOS|FxiOS|EdgiOS|OPiOS|GSA\//.test(ua)) document.getElementById("iosWarn").hidden = false;
+})();
+</script>
+</body>
+</html>

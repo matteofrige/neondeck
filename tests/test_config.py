@@ -59,3 +59,29 @@ def test_preview_url_by_name_and_ip():
     assert preview_url(cfg) == "http://neondeck.local:8787/preview?token=t"
     assert preview_url(cfg, ["192.168.1.5"], by_name=False) == "http://192.168.1.5:8787/preview?token=t"
     assert preview_url(cfg, [], by_name=False) == "http://127.0.0.1:8787/preview?token=t"
+
+
+def test_tls_defaults_and_validation(tmp_path):
+    from neondeck.config import load_config, save_config
+
+    cfg = load_config(tmp_path)
+    assert cfg["tls"] is False and cfg["tls_setup_port"] == 8786
+    for bad_tls, bad_port in (("yes", "x"), (1, 1.5), (None, True)):
+        cfg["tls"], cfg["tls_setup_port"] = bad_tls, bad_port
+        save_config(tmp_path, cfg)
+        again = load_config(tmp_path)
+        assert again["tls"] is False and again["tls_setup_port"] == 8786
+    cfg["tls"], cfg["tls_setup_port"] = True, 9000
+    save_config(tmp_path, cfg)
+    again = load_config(tmp_path)
+    assert again["tls"] is True and again["tls_setup_port"] == 9000
+
+
+def test_preview_and_setup_url_with_tls():
+    from neondeck.config import preview_url, setup_url
+
+    cfg = {"port": 8787, "token": "t", "lan_hostname": "neondeck", "tls": True, "tls_setup_port": 8786}
+    assert preview_url(cfg) == "https://neondeck.local:8787/preview?token=t"
+    assert setup_url(cfg) == "http://neondeck.local:8786/setup"
+    assert setup_url(cfg, ["192.168.1.5"], by_name=False) == "http://192.168.1.5:8786/setup"
+    assert setup_url({"port": 8787, "lan_hostname": "x"}) == "http://x.local:8786/setup"

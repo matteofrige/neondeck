@@ -25,6 +25,7 @@ dependencies = [
     "iterm2>=2.7; sys_platform == 'darwin'",
     "zeroconf>=0.130",
     "segno>=1.6",
+    "cryptography>=42",
 ]
 
 [project.urls]

@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import collections
 import functools
+import html
 import hmac
 import json
 import logging
@@ -19,10 +20,10 @@ from urllib.parse import quote, urlparse
 
 from aiohttp import WSMsgType, web
 
-from . import platform
+from . import platform, tls
 from .buttons import ButtonStore, ValidationError, run_button
 from .pairing import TTL as PAIR_TTL, Pairing
-from .config import config_mtime, home_dir, lan_ips, load_config, preview_url, save_config
+from .config import config_mtime, home_dir, lan_ips, load_config, preview_url, save_config, setup_url
 from .errors import ControlError
 from .ledfont import MASCOT, bitmap_cells
 from .netguard import (LOCALNET, NO_ARP, NO_ROUTE, LOCALNET_WARN_EVERY, AuthThrottle, LanController, NetworkMonitor, RateLimitedLog,
@@ -788,10 +789,16 @@ async def admin_test(request):
 
 
 async def admin_info(request):
-    cfg = core(request).config
+    c = core(request)
+    cfg = c.config
     ips = lan_ips()
-    lan = core(request).lan
+    lan = c.lan
+    tls_info = {"enabled": bool(cfg.get("tls")), "setup_url": setup_url(cfg, ips),
+                "https_url": preview_url({**cfg, "tls": True}, ips).split("?")[0]}
+    if tls_info["enabled"]:
+        tls_info.update({k: v for k, v in (await asyncio.to_thread(tls.status, c.home)).items() if k != "ca"})
     return web.json_response({
+        "tls": tls_info,
         "token": cfg["token"], "port": cfg["port"], "lan_ips": ips,
         "preview_url": preview_url(cfg, ips), "preview_url_ip": preview_url(cfg, ips, by_name=False),
         "lan_listening": bool(lan and lan.listening_ip), "lan_ip": lan.listening_ip if lan else None,
@@ -937,6 +944,7 @@ class Listeners:
         self.runner: web.AppRunner | None = None
         self.ready = asyncio.Event()
         self.lan_site: web.TCPSite | None = None
+        self.setup_runner: web.AppRunner | None = None
 
     async def start_local(self) -> None:
         port = self.app["config"]["port"]
@@ -948,16 +956,92 @@ class Listeners:
         self.ready.set()
 
     async def start_lan(self, ip: str) -> None:
-        site = web.TCPSite(self.runner, ip, self.app["config"]["port"])
-        await site.start()
+        cfg = self.app["config"]
+        ssl_ctx = None
+        if cfg.get("tls"):
+            c = self.app["core"]
+            try:
+                # key generation is CPU-bound: keep it off the event loop
+                ssl_ctx = await asyncio.to_thread(tls.server_context, c.home, tls.default_names(cfg), [ip])
+            except Exception as exc:
+                log.error("HTTPS non disponibile (%s): il listener LAN non viene avviato", exc)
+                raise OSError(f"TLS non disponibile: {exc}") from exc
+            setup = web.AppRunner(make_setup_app(c), access_log=None)
+            await setup.setup()
+            try:
+                await web.TCPSite(setup, ip, cfg["tls_setup_port"]).start()
+            except OSError:
+                await setup.cleanup()
+                raise
+            self.setup_runner = setup
+        site = web.TCPSite(self.runner, ip, cfg["port"], ssl_context=ssl_ctx)
+        try:
+            await site.start()
+        except OSError:
+            await self._stop_setup()
+            raise
         self.lan_site = site
         await start_zeroconf(self.app, ip)
+
+    async def _stop_setup(self) -> None:
+        if self.setup_runner:
+            runner, self.setup_runner = self.setup_runner, None
+            await runner.cleanup()
 
     async def stop_lan(self) -> None:
         await stop_zeroconf(self.app)
         if self.lan_site:
             await self.lan_site.stop()
             self.lan_site = None
+        await self._stop_setup()
+
+
+def make_setup_app(c: Core) -> web.Application:
+    """Plain-HTTP companion of the HTTPS listener: hands out the CA, redirects everything else to https."""
+    cfg = c.config
+
+    @web.middleware
+    async def gate(request, handler):
+        denied = await network_gate(request)
+        return denied if denied is not None else await handler(request)
+
+    async def to_setup(request):
+        raise web.HTTPFound("/setup")
+
+    async def setup_page(request):
+        page = STATIC / "setup.html"
+        try:
+            text = await asyncio.to_thread(page.read_text, encoding="utf-8")
+        except OSError:
+            return web.Response(status=500, text="Pagina di setup mancante (static/setup.html)")
+        https = f"https://{host_only(request)}:{cfg['port']}/preview"
+        fp = await asyncio.to_thread(tls.ca_fingerprint, c.home) or ""
+        text = text.replace("__HTTPS_URL__", html.escape(https)).replace("__CA_FP__", html.escape(fp))
+        return web.Response(text=text, content_type="text/html", headers={"Cache-Control": "no-store"})
+
+    async def mobileconfig(request):
+        data = await asyncio.to_thread(tls.mobileconfig, c.home, socket.gethostname().split(".")[0])
+        return web.Response(body=data, content_type="application/x-apple-aspen-config",
+                            headers={"Content-Disposition": 'attachment; filename="neondeck-ca.mobileconfig"'})
+
+    async def ca_download(request):
+        data = await asyncio.to_thread(tls.ca_pem, c.home)
+        return web.Response(body=data, content_type="application/x-pem-file",
+                            headers={"Content-Disposition": 'attachment; filename="neondeck-ca.crt"'})
+
+    async def to_https(request):
+        raise web.HTTPPermanentRedirect(f"https://{host_only(request)}:{cfg['port']}{request.path_qs}")
+
+    app = web.Application(middlewares=[gate])
+    app["core"] = c
+    app["config"] = cfg
+    r = app.router
+    r.add_get("/", to_setup)
+    r.add_get("/setup", setup_page)
+    r.add_get("/neondeck-ca.mobileconfig", mobileconfig)
+    r.add_get("/neondeck-ca.pem", ca_download)
+    r.add_get("/{tail:.*}", to_https)  # HEAD included
+    return app
 
 
 async def start_zeroconf(app: web.Application, ip: str) -> None:
@@ -971,7 +1055,7 @@ async def start_zeroconf(app: web.Application, ip: str) -> None:
             "_neondeck._tcp.local.",
             f"Neondeck ({host})._neondeck._tcp.local.",
             addresses=[socket.inet_aton(ip)],
-            port=cfg["port"], properties={"v": "1"}, server=f"{cfg['lan_hostname']}.local.",
+            port=cfg["port"], properties={"v": "1", "tls": "1" if cfg.get("tls") else "0"}, server=f"{cfg['lan_hostname']}.local.",
         )
         azc = AsyncZeroconf(interfaces=[ip])
         await azc.async_register_service(info)

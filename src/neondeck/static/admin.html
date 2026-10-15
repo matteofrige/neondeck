@@ -141,7 +141,7 @@
   .netname { font: inherit; font-weight: 600; padding: 3px 7px; border-color: transparent; background: transparent; }
   .netname:hover, .netname:focus { border-color: #2a261e; background: #000; }
   .warn { color: var(--prose-2); font-size: 13px; margin: 8px 0 0; }
-  #qr { border: 1px solid var(--rule); flex: none; width: 240px; height: 240px; }
+  #qr, #tlsQr { border: 1px solid var(--rule); flex: none; width: 240px; height: 240px; }
   #list > div:first-child .item { border-top-color: transparent; }
 </style>
 </head>
@@ -216,7 +216,35 @@
             <code class="token" id="phoneUrl" style="display:block"></code>
             <p class="muted" style="margin:8px 0 0;font-size:13px">Se il nome non si risolve: <code id="phoneUrlIp" style="word-break:break-all"></code></p>
             <div class="row" style="margin-top:10px"><button class="small" id="copyPhone">Copia link</button></div>
+            <p class="muted hidden" id="phoneTlsNote" style="margin:10px 0 0;font-size:13px">HTTPS è attivo: per un telefono nuovo usa prima l'indirizzo di setup (scheda HTTPS).</p>
           </div>
+        </div>
+      </section>
+
+      <section class="sec hidden" id="tlsCard">
+        <h2 data-led="HTTPS">HTTPS</h2>
+        <div id="tlsOff">
+          <p class="muted" style="margin:0 0 10px">Connessione al telefono in chiaro (HTTP). Con HTTPS il token viaggia cifrato e la scansione del QR usa la fotocamera live.</p>
+          <div class="row"><code class="grow" id="tlsCmd">neondeck tls enable</code><button class="small" id="copyTlsCmd">Copia</button></div>
+        </div>
+        <div id="tlsOn" class="hidden">
+          <div class="row"><span class="lamp ok"><i></i><span>Attivo</span></span></div>
+          <p class="muted" style="margin:10px 0 6px">Per un telefono nuovo apri prima l'indirizzo di setup: installa il certificato, poi il telefono si collega in HTTPS.</p>
+          <div class="row" id="tlsQrBox" style="align-items:flex-start;gap:20px">
+            <canvas id="tlsQr" width="240" height="240" aria-label="QR code della pagina di setup"></canvas>
+            <div class="grow" style="min-width:200px">
+              <code class="token" id="tlsSetupUrl" style="display:block"></code>
+              <div class="row" style="margin-top:10px"><button class="small" id="copyTlsSetup">Copia link</button></div>
+            </div>
+          </div>
+          <dl class="net">
+            <dt>Indirizzo HTTPS</dt><dd class="mono" id="tlsHttps">-</dd>
+            <dt>Impronta CA</dt><dd class="mono" id="tlsFp">-</dd>
+            <dt>Scadenza server</dt><dd id="tlsLeaf">-</dd>
+            <dt>Scadenza CA</dt><dd id="tlsCa">-</dd>
+            <dt>Nomi coperti</dt><dd class="mono" id="tlsNames">-</dd>
+          </dl>
+          <p class="warn">Il certificato del server si rinnova da solo. <code>neondeck tls rotate</code> crea una nuova autorità: i telefoni dovranno reinstallare il profilo.</p>
         </div>
       </section>
 
@@ -969,6 +997,36 @@ function drawQR(canvas, text) {
   g.fill();
 }
 
+// ---- HTTPS card
+function fmtDate(v) {
+  const d = new Date(v);
+  return isNaN(d) ? String(v || "-") : d.toLocaleDateString("it-IT", { day: "numeric", month: "long", year: "numeric" });
+}
+function wireCopy(btn, text, label) {
+  btn.onclick = async () => {
+    try { await navigator.clipboard.writeText(text); btn.textContent = "Copiato"; }
+    catch { btn.textContent = "Copia non riuscita"; }
+    setTimeout(() => (btn.textContent = label), 1500);
+  };
+}
+function renderTls(t) {
+  $("tlsCard").classList.toggle("hidden", !t);
+  $("phoneTlsNote").classList.toggle("hidden", !(t && t.enabled));
+  if (!t) return;
+  $("tlsOff").classList.toggle("hidden", !!t.enabled);
+  $("tlsOn").classList.toggle("hidden", !t.enabled);
+  if (!t.enabled) { wireCopy($("copyTlsCmd"), "neondeck tls enable", "Copia"); return; }
+  $("tlsSetupUrl").textContent = t.setup_url || "";
+  $("tlsQrBox").classList.toggle("hidden", !t.setup_url);
+  if (t.setup_url) { try { drawQR($("tlsQr"), t.setup_url); } catch { $("tlsQrBox").classList.add("hidden"); } }
+  wireCopy($("copyTlsSetup"), t.setup_url || "", "Copia link");
+  $("tlsHttps").textContent = t.https_url || "-";
+  $("tlsFp").textContent = t.ca_fingerprint || "-";
+  $("tlsLeaf").textContent = t.leaf_expires ? fmtDate(t.leaf_expires) : "-";
+  $("tlsCa").textContent = t.ca_expires ? fmtDate(t.ca_expires) : "-";
+  $("tlsNames").textContent = (t.leaf_names || []).join(", ") || "-";
+}
+
 // ---- device info
 async function loadInfo() {
   const i = await api("GET", "/api/admin/info");
@@ -988,6 +1046,7 @@ async function loadInfo() {
     catch { $("copyPhone").textContent = "Copia non riuscita"; }
     setTimeout(() => ($("copyPhone").textContent = "Copia link"), 1500);
   };
+  renderTls(i.tls);
   $("fShowAll").checked = i.show_all_terminals !== false;
   $("fShowAll").onchange = async (e) => {
     try { await api("PUT", "/api/admin/settings", { show_all_terminals: e.target.checked }); }

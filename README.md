@@ -120,6 +120,27 @@ Neondeck used to be called *Claude Deck*. On first run, if `~/.config/neondeck` 
 
 </details>
 
+## HTTPS (optional)
+
+By default the phone talks to the agent over plain HTTP on your LAN. Turn on HTTPS to encrypt the token and the traffic, and to get the live camera view when scanning the QR code (browsers only allow the camera on secure pages).
+
+```bash
+neondeck tls enable      # creates the CA and the server certificate, restarts the agent
+```
+
+Then, once per phone:
+
+1. Open the setup address printed by the command (or scan the QR of `neondeck qr`, which now points to it) in **Safari**.
+2. Tap *Download profile*, then Settings › *Profile Downloaded* › Install.
+3. Settings › General › About › Certificate Trust Settings: enable **Neondeck Local CA**.
+4. Open the `https://neondeck.local:8787` address and tap **ABBINA**, then Add to Home Screen.
+
+On Android: download the `.crt` from the setup page, then Settings › Security › Encryption & credentials › Install a certificate › CA certificate.
+
+The app you installed from the old `http://` address is a different origin: delete it and add the HTTPS one. The setup page stays on plain HTTP (port 8786, same network checks) because the phone has to fetch the certificate before it can trust anything.
+
+The CA lives in `~/.config/neondeck/tls/` (keys with mode 600). It is **name-constrained**: it can only sign `.local` names and private/loopback IP ranges, so if its key is stolen it cannot be used to impersonate public websites. The server certificate is renewed automatically. `neondeck tls rotate` creates a new CA (every phone must reinstall the profile and remove the old one in Settings › General › VPN & Device Management); `neondeck tls disable` goes back to HTTP and keeps the files.
+
 ## CLI reference
 
 Run `neondeck` with no arguments to start the server in the foreground (same as `neondeck run`).
@@ -133,6 +154,7 @@ Run `neondeck` with no arguments to start the server in the foreground (same as 
 | `neondeck restart` | Restart the agent (`launchctl kickstart -k` or `systemctl --user restart`). |
 | `neondeck qr` | Print the phone address and a QR code. |
 | `neondeck pair [CODE]` | Approve a phone pairing request: lists the pending ones and asks for each, or approves `CODE` directly. |
+| `neondeck tls [status\|enable\|disable\|rotate]` | Optional HTTPS with a local CA, see [HTTPS](#https-optional). |
 | `neondeck token [--rotate] [--admin]` | Print the device token (or the admin key with `--admin`); `--rotate` generates a new one. |
 | `neondeck trust [--name NAME]` | Mark the current network as trusted. |
 | `neondeck networks` | List trusted networks and mark the current one. |
@@ -289,7 +311,7 @@ Other details: icons are limited to 2 MB and to image types, and SVGs are served
 
 **Be honest about the limits.**
 
-- Traffic between the device and the computer is **plain HTTP** on your LAN. Anyone who can sniff that network can read the token. That is why the listener only runs on networks you explicitly trust.
+- Traffic between the device and the computer is **plain HTTP** on your LAN unless you enable [HTTPS](#https-optional). Anyone who can sniff that network can read the token. That is why the listener only runs on networks you explicitly trust.
 - A button that sends **Enter can approve a Claude Code permission prompt**. Anybody holding the token can do that. Treat the token like a password.
 
 Recommendations:

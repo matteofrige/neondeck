@@ -88,6 +88,12 @@ def load_config(home: Path) -> dict:
     if not isinstance(cfg.get("port"), int):
         cfg["port"] = DEFAULT_PORT
         changed = True
+    if not isinstance(cfg.get("tls"), bool):
+        cfg["tls"] = False
+        changed = True
+    if not (isinstance(cfg.get("tls_setup_port"), int) and not isinstance(cfg.get("tls_setup_port"), bool)):
+        cfg["tls_setup_port"] = cfg["port"] - 1
+        changed = True
     if not (isinstance(cfg.get("lan_hostname"), str) and HOSTNAME_RE.fullmatch(cfg["lan_hostname"])):
         cfg["lan_hostname"] = DEFAULT_HOSTNAME
         changed = True
@@ -135,11 +141,20 @@ def lan_ips() -> list[str]:
     return ips
 
 
+def phone_host(cfg: dict, ips: list[str] | None, by_name: bool) -> str:
+    if by_name:
+        return f"{cfg.get('lan_hostname', DEFAULT_HOSTNAME)}.local"
+    ips = lan_ips() if ips is None else ips
+    return ips[0] if ips else "127.0.0.1"
+
+
 def preview_url(cfg: dict, ips: list[str] | None = None, by_name: bool = True) -> str:
     """Phone URL: by mDNS name (stable origin across networks) or by LAN IP (fallback)."""
-    if by_name:
-        host = f"{cfg.get('lan_hostname', DEFAULT_HOSTNAME)}.local"
-    else:
-        ips = lan_ips() if ips is None else ips
-        host = ips[0] if ips else "127.0.0.1"
-    return f"http://{host}:{cfg['port']}/preview?token={cfg['token']}"
+    scheme = "https" if cfg.get("tls") else "http"
+    return f"{scheme}://{phone_host(cfg, ips, by_name)}:{cfg['port']}/preview?token={cfg['token']}"
+
+
+def setup_url(cfg: dict, ips: list[str] | None = None, by_name: bool = True) -> str:
+    """Plain-HTTP page that hands out the local CA (no token in it)."""
+    port = cfg.get("tls_setup_port", cfg["port"] - 1)
+    return f"http://{phone_host(cfg, ips, by_name)}:{port}/setup"

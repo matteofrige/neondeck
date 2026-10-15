@@ -15,7 +15,7 @@ import urllib.request
 from pathlib import Path
 
 from . import __version__, platform
-from .config import home_dir, load_config, preview_url, save_config
+from .config import home_dir, load_config, preview_url, save_config, setup_url
 from .netguard import LOCALNET, is_trusted, localnet_guidance, new_entry, normalize_mac
 from .platform import UnsupportedPlatform
 from .vsix import build_vsix, extension_id
@@ -119,6 +119,14 @@ def admin_url(cfg: dict) -> str:
 def print_qr(cfg: dict) -> None:
     import segno
 
+    if cfg.get("tls"):
+        url = setup_url(cfg)
+        print(f"\nPrimo collegamento (installa il certificato): {url}")
+        print(f"Già configurato: {preview_url(cfg)}")
+        print(f"Se il nome non si risolve: {setup_url(cfg, by_name=False)}")
+        print(f"                           {preview_url(cfg, by_name=False)}\n")
+        segno.make(url).terminal(compact=True)
+        return
     url = preview_url(cfg)
     print(f"\nTelefono (stessa rete Wi-Fi): {url}")
     print(f"Se il nome non si risolve: {preview_url(cfg, by_name=False)}\n")
@@ -321,6 +329,75 @@ def cmd_pair(args, call=admin_call, ask=input) -> int:
     return 0
 
 
+def restart_if_running() -> int:
+    """Restart the installed service so the new TLS setting applies; hint when there is none."""
+    svc = platform.current().service()
+    if svc.installed():
+        return svc.restart()
+    print("Riavvia l'agent per applicare.")
+    return 0
+
+
+TLS_STEPS = """
+Sul telefono:
+  1. Apri l'indirizzo di setup (o scansiona il QR di `neondeck qr`) con Safari.
+  2. Tocca «Scarica profilo», poi Impostazioni > Profilo scaricato > Installa.
+  3. Impostazioni > Generali > Info > Impostazioni certificati attendibili:
+     attiva «Neondeck Local CA».
+  4. Apri l'indirizzo https e tocca ABBINA, poi Aggiungi a Home
+     (la vecchia app http va eliminata).
+"""
+
+
+def cmd_tls(args, ask=input, restart=restart_if_running) -> int:
+    from . import tls
+
+    home, cfg = load()
+    action = args.action
+    if action == "enable":
+        tls.ensure_ca(home)
+        cfg["tls"] = True
+        save_config(home, cfg)
+        print("HTTPS attivato.")
+        print(f"Impronta SHA-256 della CA: {tls.ca_fingerprint(home)}")
+        print(f"Indirizzo di setup: {setup_url(cfg)}")
+        print(TLS_STEPS)
+        return restart()
+    if action == "disable":
+        cfg["tls"] = False
+        save_config(home, cfg)
+        print("HTTPS disattivato (i file in tls/ restano).")
+        return restart()
+    if action == "rotate":
+        try:
+            answer = ask("I telefoni dovranno reinstallare il profilo. Continuare? [s/N] ").strip().lower()
+        except EOFError:
+            answer = ""
+        if answer not in ("s", "si", "sì", "y", "yes"):
+            print("Annullato.")
+            return 1
+        tls.rotate_ca(home)
+        print(f"Nuova CA creata. Impronta SHA-256: {tls.ca_fingerprint(home)}")
+        print("Su ogni telefono rimuovi il vecchio profilo da Impostazioni > Generali > "
+              "VPN e gestione dispositivi, poi reinstalla quello nuovo.")
+        if cfg.get("tls"):
+            print(TLS_STEPS)
+            return restart()
+        return 0
+    st = tls.status(home)
+    print(f"HTTPS: {'attivo' if cfg.get('tls') else 'disattivato'}")
+    if not st["ca"]:
+        print("CA locale: non ancora creata (`neondeck tls enable`)")
+        return 0
+    print(f"CA locale: {st['ca_fingerprint']} (scade il {st['ca_expires'][:10]})")
+    if st["leaf_expires"]:
+        print(f"Certificato server: scade il {st['leaf_expires'][:10]}, nomi: {', '.join(st['leaf_names'])}")
+    else:
+        print("Certificato server: non ancora generato (viene creato all'avvio dell'ascolto LAN)")
+    print(f"Indirizzo di setup: {setup_url(cfg)}")
+    return 0
+
+
 def cmd_token(args) -> int:
     home, cfg = load()
     field, what = ("admin_key", "chiave admin") if args.admin else ("token", "token")
@@ -452,6 +529,9 @@ def make_parser() -> argparse.ArgumentParser:
     add("networks", cmd_networks, "elenca le reti fidate e segna quella corrente")
     sp = add("untrust", cmd_untrust, "rimuove una rete fidata")
     sp.add_argument("network", metavar="MAC|NOME|N", help="MAC, nome o numero d'ordine (vedi `networks`)")
+    sp = add("tls", cmd_tls, "HTTPS facoltativo con una CA locale: stato, attivazione, disattivazione, rotazione")
+    sp.add_argument("action", nargs="?", default="status", choices=["status", "enable", "disable", "rotate"],
+                    help="azione (predefinita: status)")
     add("admin", cmd_admin, "apre il pannello di amministrazione nel browser")
     sp = add("vsix", cmd_vsix, "crea il pacchetto .vsix dell'estensione e ne stampa il percorso")
     sp.add_argument("-o", "--output", metavar="PERCORSO", help="file o cartella di destinazione")
