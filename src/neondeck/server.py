@@ -556,7 +556,9 @@ def preview_html(mtime: int) -> str:
 async def preview(request):
     # The page holds no secrets: the token is supplied by the user and checked on /ws.
     text = preview_html((STATIC / "preview.html").stat().st_mtime_ns)
-    return web.Response(text=text, content_type="text/html", headers={"Referrer-Policy": "no-referrer"})
+    # no-cache: the installed iOS app otherwise keeps a stale page across agent updates
+    return web.Response(text=text, content_type="text/html",
+                        headers={"Referrer-Policy": "no-referrer", "Cache-Control": "no-cache"})
 
 
 async def vendor_jsqr(request):

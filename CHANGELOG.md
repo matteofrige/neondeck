@@ -2,6 +2,11 @@
 
 All notable changes to this project. Versions before 0.3.0 were released under the name *Claude Deck*.
 
+## 0.7.1
+
+- The phone page is served with `Cache-Control: no-cache`, so the app installed on the iOS home screen picks up agent updates instead of keeping a stale copy.
+- The phone page inlines its home-screen icon, so iOS shows it also over HTTPS with the local CA.
+
 ## 0.7.0
 
 - Optional HTTPS with a local CA: `neondeck tls enable` creates a private CA (EC P-256, 10 years) and a server certificate for `neondeck.local` and the computer's Bonjour name. The CA is name-constrained (critical): it can only sign `.local` names and private/loopback IP ranges, so a stolen CA key cannot impersonate public sites. The default stays plain HTTP. Other commands: `neondeck tls [status|disable|rotate]`.

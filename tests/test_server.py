@@ -430,3 +430,4 @@ async def test_preview_inlines_touch_icon(env):
     text = r.text
     assert 'rel="apple-touch-icon" href="data:image/png;base64,' in text
     assert r.headers["Referrer-Policy"] == "no-referrer"
+    assert r.headers["Cache-Control"] == "no-cache"
