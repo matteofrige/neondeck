@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import collections
 import functools
 import html
@@ -540,11 +541,22 @@ async def ws_handler(request):
     return ws
 
 
+TOUCH_ICON_LINK = '<link rel="apple-touch-icon" href="/apple-touch-icon.png">'
+
+
+@functools.lru_cache(maxsize=1)
+def preview_html(mtime: int) -> str:
+    # iOS fetches the touch icon outside Safari and ignores a user-installed CA over HTTPS:
+    # inline it so "Add to Home Screen" gets the real icon on both http and https.
+    text = (STATIC / "preview.html").read_text(encoding="utf-8")
+    data = base64.b64encode(make_icon(180)).decode()
+    return text.replace(TOUCH_ICON_LINK, f'<link rel="apple-touch-icon" href="data:image/png;base64,{data}">')
+
+
 async def preview(request):
     # The page holds no secrets: the token is supplied by the user and checked on /ws.
-    resp = web.FileResponse(STATIC / "preview.html")
-    resp.headers["Referrer-Policy"] = "no-referrer"
-    return resp
+    text = preview_html((STATIC / "preview.html").stat().st_mtime_ns)
+    return web.Response(text=text, content_type="text/html", headers={"Referrer-Policy": "no-referrer"})
 
 
 async def vendor_jsqr(request):

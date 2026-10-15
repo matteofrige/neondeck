@@ -422,3 +422,11 @@ async def test_pair_unknown_id_404_and_counts_as_failure(env):
     for _ in range(20):
         await pcall(app, preq(app, "/api/pair/nope", rid="nope"), server.api_pair_status)
     assert app["core"].throttle.is_locked("192.168.50.50")
+
+
+async def test_preview_inlines_touch_icon(env):
+    app, _, _, _ = env
+    r = await server.preview(req(app, "/preview", ip="192.168.50.50"))
+    text = r.text
+    assert 'rel="apple-touch-icon" href="data:image/png;base64,' in text
+    assert r.headers["Referrer-Policy"] == "no-referrer"
