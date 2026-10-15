@@ -163,6 +163,13 @@
 
   <div class="cols">
     <div>
+      <section class="sec hidden" id="pairCard">
+        <h2 data-led="Abbinamento">Abbinamento</h2>
+        <p class="muted" style="margin:0 0 6px">Un telefono chiede di collegarsi. Approva solo se il codice è quello mostrato sul suo schermo.</p>
+        <div id="pairList"></div>
+        <div class="error" id="pairError"></div>
+      </section>
+
       <section class="sec" id="netCard">
         <h2 data-led="Reti fidate">Reti fidate</h2>
         <div class="row">
@@ -207,6 +214,7 @@
           <div class="grow" style="min-width:200px">
             <p class="muted" style="margin-top:0">Inquadra il QR code con il telefono (stessa rete Wi-Fi), poi su iPhone usa Condividi › Aggiungi alla schermata Home.</p>
             <code class="token" id="phoneUrl" style="display:block"></code>
+            <p class="muted" style="margin:8px 0 0;font-size:13px">Se il nome non si risolve: <code id="phoneUrlIp" style="word-break:break-all"></code></p>
             <div class="row" style="margin-top:10px"><button class="small" id="copyPhone">Copia link</button></div>
           </div>
         </div>
@@ -964,11 +972,13 @@ function drawQR(canvas, text) {
 // ---- device info
 async function loadInfo() {
   const i = await api("GET", "/api/admin/info");
+  renderPairing(i.pairing || []);
   const host = i.lan_ips[0] || "127.0.0.1";
   $("lanUrl").textContent = `http://${host}:${i.port}`;
   $("token").textContent = i.token;
   $("previewLink").href = i.preview_url.replace(/^http:\/\/[^/]+/, location.origin);
   $("phoneUrl").textContent = i.preview_url;
+  $("phoneUrlIp").textContent = i.preview_url_ip;
   const lanOn = !!i.lan_listening;
   $("qrBox").classList.toggle("hidden", !lanOn);
   $("qrOff").classList.toggle("hidden", lanOn);
@@ -994,6 +1004,31 @@ async function loadInfo() {
     catch { $("copyToken").textContent = "Copia non riuscita"; }
     setTimeout(() => ($("copyToken").textContent = "Copia"), 1500);
   };
+}
+
+// ---- pairing requests
+function renderPairing(list) {
+  const card = $("pairCard"), box = $("pairList");
+  card.classList.toggle("hidden", !list.length);
+  box.replaceChildren();
+  for (const q of list) {
+    const row = mk("div", "item");
+    const meta = mk("div", "meta");
+    const code = mk("b", "mono", q.code);
+    code.style.cssText = "font-size:28px;letter-spacing:.12em;display:block";
+    meta.append(code, mk("span", "mono", `${q.ip} · ${q.ua || "-"} · ${q.expires_in} s`));
+    const yes = mk("button", "primary small", "Approva");
+    const no = mk("button", "small", "Rifiuta");
+    const act = (what) => async () => {
+      yes.disabled = no.disabled = true;
+      try { await api("POST", `/api/admin/pair/${encodeURIComponent(q.code)}/${what}`); $("pairError").textContent = ""; }
+      catch (e) { $("pairError").textContent = e.message; }
+      loadInfo().catch(() => {});
+    };
+    yes.onclick = act("approve"); no.onclick = act("deny");
+    row.append(meta, yes, no);
+    box.append(row);
+  }
 }
 
 // ---- trusted networks
@@ -1072,6 +1107,11 @@ $("netTrustForm").onsubmit = async (e) => {
 setInterval(() => {
   if (document.visibilityState === "visible" && adminKey && !$("main").hidden) { loadNetworks(); loadInfo().catch(() => {}); }
 }, 10000);
+
+// faster refresh while a pairing request is waiting
+setInterval(() => {
+  if (document.visibilityState === "visible" && adminKey && !$("main").hidden && !$("pairCard").classList.contains("hidden")) loadInfo().catch(() => {});
+}, 2000);
 
 (async () => {
   if (!adminKey) { needKey(); return; }

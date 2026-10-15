@@ -35,3 +35,27 @@ def test_icon_is_valid_png():
     for size in (180, 192, 512):
         png = server.make_icon(size)
         assert png.startswith(b"\x89PNG\r\n\x1a\n") and int.from_bytes(png[16:20], "big") == size
+
+
+def test_lan_hostname_default_and_invalid_fallback(tmp_path):
+    from neondeck.config import load_config, save_config
+
+    assert load_config(tmp_path)["lan_hostname"] == "neondeck"
+    for bad in ("Bad Name", "UPPER", "", "a" * 64, 5):
+        cfg = load_config(tmp_path)
+        cfg["lan_hostname"] = bad
+        save_config(tmp_path, cfg)
+        assert load_config(tmp_path)["lan_hostname"] == "neondeck"
+    cfg = load_config(tmp_path)
+    cfg["lan_hostname"] = "my-deck2"
+    save_config(tmp_path, cfg)
+    assert load_config(tmp_path)["lan_hostname"] == "my-deck2"
+
+
+def test_preview_url_by_name_and_ip():
+    from neondeck.config import preview_url
+
+    cfg = {"port": 8787, "token": "t", "lan_hostname": "neondeck"}
+    assert preview_url(cfg) == "http://neondeck.local:8787/preview?token=t"
+    assert preview_url(cfg, ["192.168.1.5"], by_name=False) == "http://192.168.1.5:8787/preview?token=t"
+    assert preview_url(cfg, [], by_name=False) == "http://127.0.0.1:8787/preview?token=t"

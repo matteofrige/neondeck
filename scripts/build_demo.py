@@ -12,6 +12,7 @@ DEST = ROOT / "docs" / "demo.html"
 
 def build() -> str:
     html = SRC.read_text(encoding="utf-8")
+    html = re.sub(r'<script id="manifestToken">.*?</script>\n', "", html, flags=re.S)
     html = re.sub(r'<link rel="(manifest|apple-touch-icon)"[^>]*>\n', "", html)  # absolute agent URLs, absent when static
     return html.replace('<meta charset="utf-8">', '<meta charset="utf-8">\n<meta name="neondeck-demo" content="1">', 1)
 

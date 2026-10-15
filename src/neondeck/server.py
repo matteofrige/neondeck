@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import collections
 import functools
 import hmac
 import json
@@ -14,12 +15,13 @@ import time
 import uuid
 import zlib
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 from aiohttp import WSMsgType, web
 
 from . import platform
 from .buttons import ButtonStore, ValidationError, run_button
+from .pairing import TTL as PAIR_TTL, Pairing
 from .config import config_mtime, home_dir, lan_ips, load_config, preview_url, save_config
 from .errors import ControlError
 from .ledfont import MASCOT, bitmap_cells
@@ -38,6 +40,8 @@ UNSUPPORTED = "Sessione in un terminale non supportato"
 LOCAL_ADDRS = {"127.0.0.1", "::1"}
 LOCAL_HOSTS = {"127.0.0.1", "localhost", "::1", "[::1]"}
 DEVICE_PATHS = ("/api/sessions", "/api/buttons", "/api/focus", "/api/press", "/ws")
+PAIR_PATHS = ("/api/pair",)  # network checks only: the phone has no token yet
+PAIR_RATE = (5, 600.0)  # creations per IP, window in seconds
 
 
 def json_error(status: int, msg: str) -> web.Response:
@@ -67,10 +71,9 @@ async def reject(request: web.Request, status: int, ws_code: int, msg: str) -> w
     return json_error(status, msg)
 
 
-async def device_gate(request: web.Request) -> web.StreamResponse | None:
-    """Lockout, network and token checks for device endpoints. None means allowed."""
+async def network_gate(request: web.Request) -> web.StreamResponse | None:
+    """Lockout and network checks for device endpoints. None means allowed."""
     c = core(request)
-    path = request.path
     ip = request.remote or ""
     await c.reload_config()
     local = ip in LOCAL_ADDRS
@@ -86,6 +89,18 @@ async def device_gate(request: web.Request) -> web.StreamResponse | None:
                 log.warning("Richiesta da %s respinta: rete non fidata (%s)", ip,
                             (c.network.current or {}).get("mac") or "gateway sconosciuto")
             return await reject(request, 403, 4403, "Rete non fidata")
+    return None
+
+
+async def device_gate(request: web.Request) -> web.StreamResponse | None:
+    """Network and token checks for device endpoints. None means allowed."""
+    denied = await network_gate(request)
+    if denied is not None:
+        return denied
+    c = core(request)
+    path = request.path
+    ip = request.remote or ""
+    local = ip in LOCAL_ADDRS
     supplied = ""
     auth = request.headers.get("Authorization", "")
     if auth.startswith("Bearer "):
@@ -124,6 +139,10 @@ async def security(request: web.Request, handler):
                 if c.rl_log.allow("admin-key"):
                     log.warning("Chiave admin mancante o non valida (%s)", path)
                 return json_error(401, "Chiave admin mancante o non valida")
+    elif path in PAIR_PATHS or path.startswith("/api/pair/"):
+        denied = await network_gate(request)
+        if denied is not None:
+            return denied
     elif path in DEVICE_PATHS:
         denied = await device_gate(request)
         if denied is not None:
@@ -155,6 +174,9 @@ class Core:
         self.lan: LanController | None = None  # set by make_app
         self.throttle = AuthThrottle()
         self.rl_log = RateLimitedLog(60)
+        self.pairing = Pairing()
+        self._pair_hits: dict[str, collections.deque] = {}
+        self._bg: set[asyncio.Task] = set()
         self.last_focused_id: str | None = None  # last tile focused via the device
         self.clients: set[web.WebSocketResponse] = set()
         self._client_ip: dict[web.WebSocketResponse, str] = {}
@@ -194,6 +216,31 @@ class Core:
                 except ControlError:
                     pass
         await self.plat.raise_pids(chain, table)
+
+    # --- pairing
+    def pair_allowed(self, ip: str) -> bool:
+        """At most PAIR_RATE[0] creations per IP per PAIR_RATE[1] seconds."""
+        now, (limit, window) = time.monotonic(), PAIR_RATE
+        for k in [k for k, d in self._pair_hits.items() if not d or now - d[-1] > window]:
+            del self._pair_hits[k]
+        d = self._pair_hits.setdefault(ip, collections.deque())
+        while d and now - d[0] > window:
+            d.popleft()
+        if len(d) >= limit:
+            return False
+        d.append(now)
+        return True
+
+    def notify(self, title: str, text: str) -> None:
+        """Fire-and-forget desktop notification."""
+        async def go() -> None:
+            try:
+                await asyncio.wait_for(self.plat.notify(title, text), 6)
+            except Exception:
+                pass
+        task = asyncio.ensure_future(go())
+        self._bg.add(task)
+        task.add_done_callback(self._bg.discard)
 
     # --- clients
     def add_client(self, ws: web.WebSocketResponse, ip: str = "127.0.0.1") -> None:
@@ -499,17 +546,46 @@ async def preview(request):
     return resp
 
 
+async def vendor_jsqr(request):
+    # Public third-party library (Apache-2.0), no secrets: served without auth.
+    resp = web.FileResponse(STATIC / "vendor" / "jsQR.js")
+    resp.headers["Content-Type"] = "text/javascript; charset=utf-8"
+    resp.headers["Cache-Control"] = "public, max-age=604800"
+    return resp
+
+
 async def manifest(request):
+    # iOS "Add to Home Screen" uses start_url with storage separate from Safari: with a valid token
+    # (throttled like device_gate, so this is no token oracle) the installed app starts already paired.
+    start_url = "/preview"
+    supplied = request.query.get("token", "")
+    if supplied:
+        c = core(request)
+        await c.reload_config()
+        ip = request.remote or ""
+        local = ip in LOCAL_ADDRS
+        if not local and c.throttle.is_locked(ip):
+            if c.rl_log.allow(f"locked:{ip}"):
+                log.warning("Richiesta da %s respinta: IP temporaneamente bloccato", ip)
+        elif hmac.compare_digest(supplied.encode(), c.config["token"].encode()):
+            start_url = "/preview?token=" + quote(supplied, safe="")
+            if not local:
+                c.throttle.record_success(ip)
+        elif not local:
+            log.warning("Token non valido da %s (%s)", ip, short_ua(request))
+            if c.throttle.record_failure(ip):
+                log.warning("Troppi token errati da %s: IP bloccato per 10 minuti", ip)
     data = {
-        "name": "Neondeck", "short_name": "Neondeck", "lang": "it",
-        "start_url": "/preview", "scope": "/", "display": "standalone",
+        "id": "/preview", "name": "Neondeck", "short_name": "Neondeck", "lang": "it",
+        "start_url": start_url, "scope": "/", "display": "standalone",
         "orientation": "any", "background_color": "#000000", "theme_color": "#000000",
         "icons": [
             {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png"},
             {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
         ],
     }
-    return web.Response(text=json.dumps(data), content_type="application/manifest+json")
+    return web.Response(text=json.dumps(data), content_type="application/manifest+json",
+                        headers={"Cache-Control": "no-store"})
 
 
 MAGENTA, UNLIT, GROUND = (255, 46, 136), (24, 21, 15), (5, 5, 5)
@@ -618,6 +694,33 @@ async def admin_upload(request):
     return web.json_response({"path": f"icons/{name}"})
 
 
+# ---------------------------------------------------------------- pairing (device side)
+
+async def api_pair(request):
+    c = core(request)
+    ip = request.remote or ""
+    if not c.pair_allowed(ip):
+        return json_error(429, "Troppe richieste di abbinamento, riprova più tardi")
+    rid, code = c.pairing.create(ip, short_ua(request))
+    log.info("Richiesta di abbinamento da %s: codice %s", ip, code)
+    c.notify("Neondeck", f"Codice {code} da {ip}: approva con neondeck pair o nel pannello admin")
+    return web.json_response({"ok": True, "id": rid, "code": code, "expires_in": int(PAIR_TTL)})
+
+
+async def api_pair_status(request):
+    c = core(request)
+    st = c.pairing.status(request.match_info["rid"])
+    if st is None:
+        ip = request.remote or ""
+        if ip not in LOCAL_ADDRS:
+            c.throttle.record_failure(ip)
+        return web.json_response({"ok": False, "state": "expired"}, status=404)
+    out = {"ok": True, "state": st["state"]}
+    if st["state"] == "approved":
+        out["token"] = c.config["token"]
+    return web.json_response(out)
+
+
 # ---------------------------------------------------------------- admin API
 
 async def admin_page(request):
@@ -690,14 +793,36 @@ async def admin_info(request):
     lan = core(request).lan
     return web.json_response({
         "token": cfg["token"], "port": cfg["port"], "lan_ips": ips,
-        "preview_url": preview_url(cfg, ips),
+        "preview_url": preview_url(cfg, ips), "preview_url_ip": preview_url(cfg, ips, by_name=False),
         "lan_listening": bool(lan and lan.listening_ip), "lan_ip": lan.listening_ip if lan else None,
         "network_trusted": bool(lan and lan.network_trusted), "network_name": lan.network_name if lan else None,
         "network_reason": lan.network_reason if lan else None, "network_checked": bool(lan and lan.checked),
         "show_all_terminals": core(request).show_all_terminals,
         "backends": await core(request).backend_report(),
         "bonjour": ("zc" in request.app) if lan and lan.listening_ip else None,
+        "pairing": core(request).pairing.pending(),
     })
+
+
+async def admin_pair_list(request):
+    return web.json_response({"pending": core(request).pairing.pending()})
+
+
+async def admin_pair_resolve(request, approve: bool):
+    c = core(request)
+    code = request.match_info["code"]
+    if not (c.pairing.approve(code) if approve else c.pairing.deny(code)):
+        return json_error(404, "Richiesta di abbinamento non trovata o scaduta")
+    log.info("Abbinamento %s: codice %s", "approvato" if approve else "rifiutato", code)
+    return web.json_response({"ok": True})
+
+
+async def admin_pair_approve(request):
+    return await admin_pair_resolve(request, True)
+
+
+async def admin_pair_deny(request):
+    return await admin_pair_resolve(request, False)
 
 
 NETWORK_REASONS = {
@@ -846,12 +971,12 @@ async def start_zeroconf(app: web.Application, ip: str) -> None:
             "_neondeck._tcp.local.",
             f"Neondeck ({host})._neondeck._tcp.local.",
             addresses=[socket.inet_aton(ip)],
-            port=cfg["port"], properties={"v": "1"}, server=f"{host}.local.",
+            port=cfg["port"], properties={"v": "1"}, server=f"{cfg['lan_hostname']}.local.",
         )
         azc = AsyncZeroconf(interfaces=[ip])
         await azc.async_register_service(info)
         app["zc"] = (azc, info)
-        log.info("Annunciato via Bonjour: _neondeck._tcp su %s", ip)
+        log.info("Annunciato via Bonjour: _neondeck._tcp e %s.local su %s", cfg["lan_hostname"], ip)
     except Exception as exc:
         # Bonjour is optional (the Pi can always connect by IP): never block the LAN listener for it
         if _bonjour_warn.allow("bonjour"):
@@ -904,7 +1029,10 @@ def make_app(home: Path, config: dict, network: NetworkMonitor | None = None) ->
     r.add_post("/api/focus", api_focus)
     r.add_post("/api/press", api_press)
     r.add_get("/ws", ws_handler)
+    r.add_post("/api/pair", api_pair)
+    r.add_get("/api/pair/{rid}", api_pair_status)
     r.add_get("/preview", preview)
+    r.add_get("/vendor/jsQR.js", vendor_jsqr)
     r.add_get("/manifest.webmanifest", manifest)
     r.add_get(r"/{name:(icon-192|icon-512|apple-touch-icon)\.png}", icon_png)
     r.add_get("/icons/{name}", serve_icon)
@@ -917,6 +1045,9 @@ def make_app(home: Path, config: dict, network: NetworkMonitor | None = None) ->
     r.add_post("/api/admin/buttons/{id}/test", admin_test)
     r.add_post("/api/admin/icons", admin_upload)
     r.add_get("/api/admin/info", admin_info)
+    r.add_get("/api/admin/pair", admin_pair_list)
+    r.add_post("/api/admin/pair/{code}/approve", admin_pair_approve)
+    r.add_post("/api/admin/pair/{code}/deny", admin_pair_deny)
     r.add_put("/api/admin/settings", admin_settings)
     r.add_get("/api/admin/networks", admin_networks)
     r.add_post("/api/admin/networks", admin_networks_trust)
@@ -931,6 +1062,14 @@ def main() -> None:
     logging.basicConfig(
         stream=sys.stderr, level=logging.INFO,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    try:  # launchd gives agents a soft limit of 256 fds
+        import resource
+        soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+        want = 4096 if hard == resource.RLIM_INFINITY else min(hard, 4096)
+        if soft < want:
+            resource.setrlimit(resource.RLIMIT_NOFILE, (want, hard))
+    except (ImportError, ValueError, OSError):
+        pass
     home = home_dir()
     config = load_config(home)
     log.info("Dati in %s", home)

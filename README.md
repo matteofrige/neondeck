@@ -92,6 +92,8 @@ neondeck qr
 
 `neondeck install` creates the background service (a LaunchAgent on macOS, log in `~/Library/Logs/neondeck.log`; a systemd user service on Linux, see [Linux notes](#linux-notes)), installs the extension into the VS Code / Cursor builds it finds, marks the current network as trusted if you have none yet, and prints the phone address with a QR code. Scan it with your phone while on the same Wi-Fi.
 
+No camera, or no wish to type the token? Open the address on the phone and tap **ABBINA**: the phone shows a 6-digit code, and you approve it on the computer in the admin panel, with `neondeck pair`, or from the macOS notification that points to them. Requests expire after 2 minutes and the usual network checks apply; pasting the token and the QR photo scan stay available.
+
 On Linux:
 
 ```bash
@@ -100,7 +102,7 @@ neondeck install      # writes ~/.config/systemd/user/neondeck.service and enabl
 journalctl --user -u neondeck -f
 ```
 
-> 💡 **Add to Home Screen.** On iPhone: Share › *Add to Home Screen* (on Android: menu › *Install app*). It opens full screen like a native app. The installed app has its own storage, separate from Safari: if it asks for a token, paste the output of `neondeck token`.
+> 💡 **Add to Home Screen.** On iPhone: Share › *Add to Home Screen* (on Android: menu › *Install app*). It opens full screen like a native app. The QR code points at `http://neondeck.local:8787` (announced over mDNS, name configurable with `lan_hostname` in `config.json`), so the installed app keeps working when the Mac's IP changes; if the name does not resolve, use the IP URL printed by `neondeck qr`. The app's storage is separate from Safari, but the manifest carries the token, so it normally starts already paired; if it still asks, paste the output of `neondeck token`.
 
 Try it without installing anything: the [live demo](https://matteofrige.github.io/neondeck/demo.html) runs the UI with fake data.
 
@@ -130,6 +132,7 @@ Run `neondeck` with no arguments to start the server in the foreground (same as 
 | `neondeck status` | Service, server, LAN listener, Bonjour, network trust, detected terminals (`tmux: attivo (3 sessioni, 7 pannelli)`, `WezTerm: non trovato`, `kitty: remote control disattivato`, `iTerm2: ...`, `VS Code bridge: n finestre`), bridge socket and extension status. |
 | `neondeck restart` | Restart the agent (`launchctl kickstart -k` or `systemctl --user restart`). |
 | `neondeck qr` | Print the phone address and a QR code. |
+| `neondeck pair [CODE]` | Approve a phone pairing request: lists the pending ones and asks for each, or approves `CODE` directly. |
 | `neondeck token [--rotate] [--admin]` | Print the device token (or the admin key with `--admin`); `--rotate` generates a new one. |
 | `neondeck trust [--name NAME]` | Mark the current network as trusted. |
 | `neondeck networks` | List trusted networks and mark the current one. |
@@ -323,7 +326,7 @@ If you prefer DSI displays, a Compute Module 4 on a suitable carrier is an alter
 
 ## WebSocket protocol reference
 
-All device endpoints require a trusted network and the token (`Authorization: Bearer <token>`, or `?token=` on the WebSocket).
+All device endpoints require a trusted network and the token (`Authorization: Bearer <token>`, or `?token=` on the WebSocket), except the two pairing endpoints, which need only the network.
 
 <details>
 <summary><b>HTTP endpoints</b></summary>
@@ -334,6 +337,8 @@ All device endpoints require a trusted network and the token (`Authorization: Be
 | GET | `/api/buttons` | `{"buttons": [...]}` |
 | POST | `/api/focus` `{"id"}` or `{"pid"}` | Focus a tile (`id` is `claude:<pid>`, or `<backend>:<pane id>` for terminal tiles such as `iterm:<session>` or `tmux:%3`; `pid` only for Claude sessions). |
 | POST | `/api/press` `{"id", "target_id"?, "pid"?}` | Press a button; `target_id` is the tile selected on the device. Returns `{"ok", "detail"}`. |
+| POST | `/api/pair` | Pairing, no token (trusted network only): `{"ok", "id", "code", "expires_in"}`. Limited to 5 per IP per 10 minutes. |
+| GET | `/api/pair/<id>` | Pairing status `pending` / `denied` / `approved` (with `token`); 404 once expired. |
 | WS | `/ws?token=...` | See below. |
 | GET | `/preview` | Remote / simulator web app (`?frame=1` fixed 800x480, `?demo=1` fake data). |
 | GET | `/icons/<file>` | Button icons (no token). |
@@ -447,5 +452,7 @@ Grant the Local Network permission to the Python binary (see [macOS notes](#maco
 ## License and disclaimer
 
 [MIT](LICENSE) © 2026 Matteo Frigé.
+
+The phone page bundles [jsQR](https://github.com/cozmo/jsQR) 1.4.0 (Apache-2.0, see `src/neondeck/static/vendor/jsQR.LICENSE`) to read the pairing QR code from a photo.
 
 Neondeck is an independent project, not affiliated with or endorsed by Anthropic. Claude and Claude Code are trademarks of Anthropic. The mascot and all artwork in this repository are original.

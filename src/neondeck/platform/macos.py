@@ -161,6 +161,14 @@ class MacPlatform(Platform):
     def front_supported(self) -> bool:
         return True
 
+    async def notify(self, title: str, text: str) -> None:
+        def esc(v: str) -> str:
+            return v.replace("\\", "\\\\").replace('"', '\\"')
+        try:
+            await run_cmd(["osascript", "-e", f'display notification "{esc(text)}" with title "{esc(title)}"'], 5)
+        except Exception:
+            pass
+
     async def raise_pids(self, pids: list[int], table: dict) -> bool:
         for pid in pids:
             app = outer_app(table[pid][2]) if pid in table else None

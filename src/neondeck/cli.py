@@ -73,6 +73,24 @@ def admin_info(cfg: dict, timeout: float = 3) -> dict | None:
     return info if isinstance(info, dict) else None
 
 
+def admin_call(cfg: dict, path: str, method: str = "GET", timeout: float = 3) -> tuple[int, dict | None]:
+    """Call an admin endpoint of the running server: (status, json). Status 0 when it does not answer."""
+    req = urllib.request.Request(f"http://127.0.0.1:{cfg['port']}{path}", method=method,
+                                 headers={"X-Admin-Key": cfg["admin_key"]})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            status, raw = r.status, r.read()
+    except urllib.error.HTTPError as exc:
+        status, raw = exc.code, exc.read()
+    except OSError:
+        return 0, None
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        data = None
+    return status, data if isinstance(data, dict) else None
+
+
 def wait_network_check(cfg: dict, timeout: float = 8.0, fetch=admin_info, sleep=time.sleep) -> dict | None:
     """Poll the server until its first network check is done (or the timeout); returns the last info."""
     deadline = time.monotonic() + timeout
@@ -102,7 +120,8 @@ def print_qr(cfg: dict) -> None:
     import segno
 
     url = preview_url(cfg)
-    print(f"\nTelefono (stessa rete Wi-Fi): {url}\n")
+    print(f"\nTelefono (stessa rete Wi-Fi): {url}")
+    print(f"Se il nome non si risolve: {preview_url(cfg, by_name=False)}\n")
     segno.make(url).terminal(compact=True)
 
 
@@ -264,6 +283,44 @@ def cmd_qr(args) -> int:
     return 0
 
 
+def cmd_pair(args, call=admin_call, ask=input) -> int:
+    _, cfg = load()
+    if args.code:
+        status, _ = call(cfg, f"/api/admin/pair/{urllib.parse.quote(args.code, safe='')}/approve", "POST")
+        if status == 0:
+            print("L'agent non risponde: avvialo con `neondeck run` o `neondeck install`.", file=sys.stderr)
+            return 1
+        if status != 200:
+            print(f"Nessuna richiesta in attesa con il codice {args.code} (scaduta?).", file=sys.stderr)
+            return 1
+        print(f"Codice {args.code} approvato.")
+        return 0
+    status, data = call(cfg, "/api/admin/pair")
+    if status == 0:
+        print("L'agent non risponde: avvialo con `neondeck run` o `neondeck install`.", file=sys.stderr)
+        return 1
+    pending = (data or {}).get("pending") or []
+    if not pending:
+        print("Nessuna richiesta di abbinamento in attesa. Sul telefono tocca ABBINA.")
+        return 0
+    for q in pending:
+        print(f"Codice {q['code']} da {q['ip']} ({q.get('ua') or '-'}), scade tra {q['expires_in']} s")
+        try:
+            answer = ask("Approvare? [s/N] ").strip().lower()
+        except EOFError:
+            break
+        if answer in ("s", "si", "sì", "y", "yes"):
+            action, done = "approve", "approvato"
+        elif answer in ("n", "no"):
+            action, done = "deny", "rifiutato"
+        else:
+            print("Saltato.")
+            continue
+        status, _ = call(cfg, f"/api/admin/pair/{q['code']}/{action}", "POST")
+        print(f"Codice {q['code']} {done}." if status == 200 else "Richiesta scaduta nel frattempo.")
+    return 0
+
+
 def cmd_token(args) -> int:
     home, cfg = load()
     field, what = ("admin_key", "chiave admin") if args.admin else ("token", "token")
@@ -385,6 +442,8 @@ def make_parser() -> argparse.ArgumentParser:
     add("status", cmd_status, "mostra lo stato di servizio, server, rete, terminali ed estensione")
     add("restart", cmd_restart, "riavvia l'agent in esecuzione (launchctl o systemctl)")
     add("qr", cmd_qr, "mostra l'indirizzo per il telefono e il relativo QR code")
+    sp = add("pair", cmd_pair, "abbina un telefono approvando il codice a 6 cifre che mostra")
+    sp.add_argument("code", nargs="?", metavar="CODICE", help="approva direttamente questo codice, senza chiedere")
     sp = add("token", cmd_token, "stampa il token di accesso (o la chiave admin)")
     sp.add_argument("--rotate", action="store_true", help="genera un nuovo valore")
     sp.add_argument("--admin", action="store_true", help="opera sulla chiave admin invece che sul token")

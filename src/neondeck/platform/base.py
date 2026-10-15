@@ -116,6 +116,10 @@ class Platform:
     async def raise_app(self, name: str) -> bool:
         return False
 
+    # --- notifications
+    async def notify(self, title: str, text: str) -> None:
+        """Best-effort desktop notification; never raises."""
+
     # --- network
     def network_probe(self):
         raise NotImplementedError

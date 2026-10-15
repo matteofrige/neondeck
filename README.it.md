@@ -92,6 +92,8 @@ neondeck qr
 
 `neondeck install` crea il servizio in background (un LaunchAgent su macOS, log in `~/Library/Logs/neondeck.log`; un servizio utente systemd su Linux, vedi [Note su Linux](#note-su-linux)), installa l'estensione nei VS Code / Cursor che trova, marca come fidata la rete corrente se non ne hai ancora, e mostra l'indirizzo per il telefono con un QR code. Scansionalo dal telefono collegato alla stessa Wi-Fi.
 
+Niente fotocamera, o nessuna voglia di digitare il token? Apri l'indirizzo sul telefono e tocca **ABBINA**: il telefono mostra un codice di 6 cifre, che approvi sul computer nel pannello admin, con `neondeck pair` o dalla notifica di macOS che ti rimanda lì. Le richieste scadono dopo 2 minuti e valgono i soliti controlli di rete; restano disponibili sia il token incollato sia la scansione del QR da foto.
+
 Su Linux:
 
 ```bash
@@ -100,7 +102,7 @@ neondeck install      # scrive ~/.config/systemd/user/neondeck.service e lo abil
 journalctl --user -u neondeck -f
 ```
 
-> 💡 **Aggiungi alla schermata Home.** Su iPhone: Condividi › *Aggiungi alla schermata Home* (su Android: menu › *Installa app*). Si apre a schermo intero come un'app nativa. L'app installata ha una memoria separata da Safari: se chiede un token, incolla l'output di `neondeck token`.
+> 💡 **Aggiungi alla schermata Home.** Su iPhone: Condividi › *Aggiungi alla schermata Home* (su Android: menu › *Installa app*). Si apre a schermo intero come un'app nativa. Il QR code punta a `http://neondeck.local:8787` (annunciato via mDNS, nome configurabile con `lan_hostname` in `config.json`), quindi l'app installata continua a funzionare quando cambia l'IP del Mac; se il nome non si risolve, usa l'URL con l'IP stampato da `neondeck qr`. La memoria dell'app è separata da Safari, ma il manifest porta con sé il token, quindi di norma parte già abbinata; se lo chiede comunque, tocca ABBINA o incolla l'output di `neondeck token`.
 
 Provalo senza installare nulla: la [demo online](https://matteofrige.github.io/neondeck/demo.html) esegue l'interfaccia con dati finti.
 
@@ -130,6 +132,7 @@ Esegui `neondeck` senza argomenti per avviare il server in primo piano (come `ne
 | `neondeck status` | Stato di servizio, server, listener LAN, Bonjour, rete fidata, terminali rilevati (`tmux: attivo (3 sessioni, 7 pannelli)`, `WezTerm: non trovato`, `kitty: remote control disattivato`, `iTerm2: ...`, `VS Code bridge: n finestre`), socket del bridge ed estensione. |
 | `neondeck restart` | Riavvia l'agent (`launchctl kickstart -k` o `systemctl --user restart`). |
 | `neondeck qr` | Stampa l'indirizzo per il telefono e un QR code. |
+| `neondeck pair [CODICE]` | Approva una richiesta di abbinamento del telefono: elenca quelle in attesa e chiede conferma per ciascuna, oppure approva subito `CODICE`. |
 | `neondeck token [--rotate] [--admin]` | Stampa il token dei dispositivi (o la chiave admin con `--admin`); `--rotate` ne genera uno nuovo. |
 | `neondeck trust [--name NOME]` | Marca la rete corrente come fidata. |
 | `neondeck networks` | Elenca le reti fidate e segna quella corrente. |
@@ -323,7 +326,7 @@ Se preferisci i display DSI, un Compute Module 4 su una carrier adatta è un'alt
 
 ## Riferimento del protocollo WebSocket
 
-Tutti gli endpoint per i dispositivi richiedono una rete fidata e il token (`Authorization: Bearer <token>`, oppure `?token=` sul WebSocket).
+Tutti gli endpoint per i dispositivi richiedono una rete fidata e il token (`Authorization: Bearer <token>`, oppure `?token=` sul WebSocket), tranne i due endpoint di abbinamento, che richiedono solo la rete.
 
 <details>
 <summary><b>Endpoint HTTP</b></summary>
@@ -334,6 +337,8 @@ Tutti gli endpoint per i dispositivi richiedono una rete fidata e il token (`Aut
 | GET | `/api/buttons` | `{"buttons": [...]}` |
 | POST | `/api/focus` `{"id"}` o `{"pid"}` | Mette a fuoco una tessera (`id` è `claude:<pid>`, oppure `<backend>:<id pannello>` per le tessere dei terminali, come `iterm:<sessione>` o `tmux:%3`; `pid` solo per le sessioni Claude). |
 | POST | `/api/press` `{"id", "target_id"?, "pid"?}` | Preme un pulsante; `target_id` è la tessera selezionata sul dispositivo. Risposta `{"ok", "detail"}`. |
+| POST | `/api/pair` | Abbinamento, senza token (solo rete fidata): `{"ok", "id", "code", "expires_in"}`. Massimo 5 per IP ogni 10 minuti. |
+| GET | `/api/pair/<id>` | Stato dell'abbinamento `pending` / `denied` / `approved` (con `token`); 404 dopo la scadenza. |
 | WS | `/ws?token=...` | Vedi sotto. |
 | GET | `/preview` | Web app telecomando / simulatore (`?frame=1` fisso 800x480, `?demo=1` dati finti). |
 | GET | `/icons/<file>` | Icone dei pulsanti (senza token). |
@@ -447,5 +452,7 @@ Concedi il permesso Rete locale al binario Python (vedi [Note su macOS](#note-su
 ## Licenza e avvertenze
 
 [MIT](LICENSE) © 2026 Matteo Frigé.
+
+La pagina del telefono include [jsQR](https://github.com/cozmo/jsQR) 1.4.0 (Apache-2.0, vedi `src/neondeck/static/vendor/jsQR.LICENSE`) per leggere il QR code da una foto.
 
 Neondeck è un progetto indipendente, non affiliato né approvato da Anthropic. Claude e Claude Code sono marchi di Anthropic. La mascotte e tutta la grafica di questo repository sono originali.

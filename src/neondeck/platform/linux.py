@@ -203,6 +203,10 @@ class LinuxPlatform(Platform):
         return (bool(os.environ.get("DISPLAY")) and os.environ.get("XDG_SESSION_TYPE") != "wayland"
                 and shutil.which("xdotool") is not None)
 
+    async def notify(self, title: str, text: str) -> None:
+        if shutil.which("notify-send"):
+            await run_cmd(["notify-send", title, text], 5)
+
     def front_supported(self) -> bool:
         return self._x11()
 

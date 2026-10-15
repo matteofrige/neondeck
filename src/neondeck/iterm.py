@@ -10,6 +10,8 @@ from typing import Callable
 
 import iterm2
 from iterm2 import api_pb2
+from iterm2 import app as iterm2_app
+from iterm2 import notifications as iterm2_notifications
 from iterm2.notifications import async_subscribe_to_variable_change_notification, async_unsubscribe
 from iterm2.rpc import async_variable
 
@@ -29,6 +31,7 @@ class ItermClient:
 
     def __init__(self, on_change: Callable[[], None] | None = None) -> None:
         self._conn: iterm2.Connection | None = None
+        self._dead = None  # connection lost but not yet torn down
         self._task: asyncio.Task | None = None
         self._monitors: asyncio.Task | None = None
         self._on_change = on_change or (lambda: None)
@@ -54,6 +57,8 @@ class ItermClient:
         for t in (self._task, self._monitors):
             if t:
                 t.cancel()
+        await self._discard(self._conn)
+        self._conn = None
 
     def want(self, ttl: float = math.inf) -> None:
         """Ask for a connection for `ttl` seconds (forever by default)."""
@@ -79,8 +84,11 @@ class ItermClient:
             if self._conn is not None:
                 await self._lost.wait()  # connected: block until an RPC fails
                 self._lost.clear()
+                dead, self._dead = self._dead, None
+                await self._discard(dead)
                 continue
             try:
+                iterm2_app.App.instance = None  # a fresh App must be built on the new connection
                 self._conn = await asyncio.wait_for(iterm2.Connection.async_create(), 10)
                 log.info("Connesso a iTerm2")
                 delay = 2
@@ -142,8 +150,37 @@ class ItermClient:
         except BaseException as exc:
             log.debug("Monitor iTerm2 non disponibili, uso il polling: %r", exc)
 
+    async def _discard(self, conn) -> None:
+        """Tear down an old connection and the library's process-global state tied to it."""
+        try:
+            # The library keeps these process-global and only resets them in Connection.run(),
+            # which we never use (async_create): without this every new connection reuses a dead App.
+            iterm2_app.App.instance = None
+            iterm2_notifications._handlers.clear()
+        except Exception:
+            pass
+        if conn is None:
+            return
+        try:
+            fut = getattr(conn, "_Connection__dispatch_forever_future", None)
+            if fut:
+                fut.cancel()
+        except Exception:
+            pass
+        try:
+            ws = getattr(conn, "websocket", None)
+            if ws is not None:
+                await asyncio.wait_for(ws.close(), 2)
+        except BaseException as exc:
+            if isinstance(exc, (KeyboardInterrupt, SystemExit)):
+                raise
+            if isinstance(exc, asyncio.CancelledError) and not isinstance(exc, asyncio.TimeoutError):
+                raise
+
     def _drop(self, exc: BaseException) -> None:
         log.warning("Connessione a iTerm2 persa: %r", exc)
+        if self._conn is not None:
+            self._dead = self._conn
         self._conn = None
         self._tty_by_sid.clear()
         self._vars.clear()

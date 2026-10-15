@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -12,6 +13,8 @@ from pathlib import Path
 log = logging.getLogger("neondeck.config")
 
 DEFAULT_PORT = 8787
+DEFAULT_HOSTNAME = "neondeck"
+HOSTNAME_RE = re.compile(r"[a-z0-9-]{1,63}")
 
 
 def env_home() -> str | None:
@@ -85,6 +88,9 @@ def load_config(home: Path) -> dict:
     if not isinstance(cfg.get("port"), int):
         cfg["port"] = DEFAULT_PORT
         changed = True
+    if not (isinstance(cfg.get("lan_hostname"), str) and HOSTNAME_RE.fullmatch(cfg["lan_hostname"])):
+        cfg["lan_hostname"] = DEFAULT_HOSTNAME
+        changed = True
     if changed or not path.exists():
         atomic_write_json(path, cfg)
         try:
@@ -129,7 +135,11 @@ def lan_ips() -> list[str]:
     return ips
 
 
-def preview_url(cfg: dict, ips: list[str] | None = None) -> str:
-    ips = lan_ips() if ips is None else ips
-    host = ips[0] if ips else "127.0.0.1"
+def preview_url(cfg: dict, ips: list[str] | None = None, by_name: bool = True) -> str:
+    """Phone URL: by mDNS name (stable origin across networks) or by LAN IP (fallback)."""
+    if by_name:
+        host = f"{cfg.get('lan_hostname', DEFAULT_HOSTNAME)}.local"
+    else:
+        ips = lan_ips() if ips is None else ips
+        host = ips[0] if ips else "127.0.0.1"
     return f"http://{host}:{cfg['port']}/preview?token={cfg['token']}"

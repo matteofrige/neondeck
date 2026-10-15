@@ -29,6 +29,7 @@ def env(tmp_path):
     save_config(tmp_path, cfg)
     state = {"net": net()}
     app = server.make_app(tmp_path, cfg, NetworkMonitor(lambda: state["net"]))
+    app["core"].notify = lambda title, text: None  # no real desktop notifications from tests
     return app, cfg, state, tmp_path
 
 
@@ -267,3 +268,155 @@ async def test_admin_rename_and_delete(env):
     resp = await server.admin_networks_delete(await with_match(app, cfg, "DELETE", MAC))
     assert resp.status == 200 and load_config(home)["trusted_networks"] == []
     assert json.loads(resp.body)["current"]["trusted"] is False
+
+
+# ---- manifest token / start_url
+
+async def manifest_json(app, query="", ip="127.0.0.1"):
+    r = await server.manifest(req(app, "/manifest.webmanifest" + query, ip=ip))
+    assert r.headers["Cache-Control"] == "no-store"
+    return json.loads(r.text)
+
+
+async def test_manifest_without_token_is_plain(env):
+    app, _, _, _ = env
+    data = await manifest_json(app)
+    assert data["start_url"] == "/preview" and data["id"] == "/preview"
+
+
+async def test_manifest_with_valid_token_carries_it(env):
+    app, cfg, _, _ = env
+    data = await manifest_json(app, "?token=" + cfg["token"])
+    assert data["start_url"].startswith("/preview?token=") and cfg["token"] in data["start_url"]
+    assert data["id"] == "/preview"
+
+
+async def test_manifest_wrong_token_local_is_plain(env):
+    app, _, _, _ = env
+    assert (await manifest_json(app, "?token=nope"))["start_url"] == "/preview"
+
+
+async def test_manifest_wrong_token_remote_records_failure_and_locks(env):
+    app, cfg, _, _ = env
+    ip = "192.168.50.50"
+    for _ in range(10):
+        assert (await manifest_json(app, "?token=nope", ip=ip))["start_url"] == "/preview"
+    assert server.core(req(app, "/")).throttle.is_locked(ip)
+    # locked: even the right token no longer yields the token-carrying start_url
+    assert (await manifest_json(app, "?token=" + cfg["token"], ip=ip))["start_url"] == "/preview"
+
+
+# ---- QR scan from photo
+
+async def test_vendor_jsqr_served_public(env):
+    app, _, _, _ = env
+    r = await server.vendor_jsqr(req(app, "/vendor/jsQR.js", ip="192.168.50.50"))
+    assert r.headers["Content-Type"].startswith("text/javascript")
+    assert "max-age=604800" in r.headers["Cache-Control"]
+    assert "jsQR" in (server.STATIC / "vendor" / "jsQR.js").read_text()
+
+
+def test_preview_has_scan_button():
+    html = (server.STATIC / "preview.html").read_text()
+    assert 'id="scanBtn"' in html and 'capture="environment"' in html
+
+
+# ---------------------------------------------------------------- pairing
+
+def preq(app, path, ip="192.168.50.50", method="GET", admin_key=None, **match):
+    h = {"Host": "localhost:8787"}
+    if admin_key:
+        h["X-Admin-Key"] = admin_key
+    transport = mock.Mock()
+    transport.get_extra_info.side_effect = lambda k, d=None: (ip, 5555) if k == "peername" else d
+    return make_mocked_request(method, path, headers=h, app=app, transport=transport, match_info=match)
+
+
+async def pcall(app, r, handler):
+    return await server.security(r, handler)
+
+
+async def create_pair(app):
+    r = await pcall(app, preq(app, "/api/pair", method="POST"), server.api_pair)
+    assert r.status == 200
+    return json.loads(r.body)
+
+
+async def test_pair_create_from_trusted_lan_without_token(env):
+    app, cfg, _, _ = env
+    data = await create_pair(app)
+    assert data["ok"] and len(data["code"]) == 6 and data["expires_in"] == 120 and data["id"]
+
+
+async def test_pair_from_untrusted_network_403(env):
+    app, cfg, state, _ = env
+    state["net"] = net("aa:bb:cc:dd:ee:ff")
+    assert (await pcall(app, preq(app, "/api/pair", method="POST"), server.api_pair)).status == 403
+    assert (await pcall(app, preq(app, "/api/pair/xyz", rid="xyz"), server.api_pair_status)).status == 403
+
+
+async def test_pair_rate_limit(env):
+    app, cfg, _, _ = env
+    for _ in range(5):
+        await create_pair(app)
+    r = await pcall(app, preq(app, "/api/pair", method="POST"), server.api_pair)
+    assert r.status == 429 and "Troppe richieste" in json.loads(r.body)["error"]
+
+
+async def test_pair_flow_pending_approve_token_once(env):
+    app, cfg, _, _ = env
+    d = await create_pair(app)
+    poll = lambda: pcall(app, preq(app, f"/api/pair/{d['id']}", rid=d["id"]), server.api_pair_status)
+    r = await poll()
+    assert r.status == 200 and json.loads(r.body) == {"ok": True, "state": "pending"}
+
+    key = cfg["admin_key"]
+    lst = await pcall(app, preq(app, "/api/admin/pair", ip="127.0.0.1", admin_key=key), server.admin_pair_list)
+    pending = json.loads(lst.body)["pending"]
+    assert [q["code"] for q in pending] == [d["code"]] and d["id"] not in lst.text
+    info = await pcall(app, preq(app, "/api/admin/info", ip="127.0.0.1", admin_key=key), server.admin_info)
+    assert json.loads(info.body)["pairing"] == pending
+
+    ok = await pcall(app, preq(app, f"/api/admin/pair/{d['code']}/approve", ip="127.0.0.1", method="POST",
+                               admin_key=key, code=d["code"]), server.admin_pair_approve)
+    assert ok.status == 200
+    got = json.loads((await poll()).body)
+    assert got == {"ok": True, "state": "approved", "token": cfg["token"]}
+    again = await poll()
+    assert again.status == 404 and json.loads(again.body)["state"] == "expired"
+
+
+async def test_pair_deny_and_unknown_code(env):
+    app, cfg, _, _ = env
+    d = await create_pair(app)
+    key = cfg["admin_key"]
+
+    def adm(action, code):
+        return pcall(app, preq(app, f"/api/admin/pair/{code}/{action}", ip="127.0.0.1", method="POST",
+                               admin_key=key, code=code),
+                     server.admin_pair_deny if action == "deny" else server.admin_pair_approve)
+
+    assert (await adm("approve", "000000")).status == 404
+    assert (await adm("deny", d["code"])).status == 200
+    r = await pcall(app, preq(app, f"/api/pair/{d['id']}", rid=d["id"]), server.api_pair_status)
+    assert json.loads(r.body) == {"ok": True, "state": "denied"}
+
+
+async def test_pair_admin_endpoints_need_key_and_localhost(env):
+    app, cfg, _, _ = env
+    d = await create_pair(app)
+    path = f"/api/admin/pair/{d['code']}/approve"
+    nokey = preq(app, path, ip="127.0.0.1", method="POST", code=d["code"])
+    assert (await pcall(app, nokey, server.admin_pair_approve)).status == 401
+    remote = preq(app, path, method="POST", admin_key=cfg["admin_key"], code=d["code"])
+    assert (await pcall(app, remote, server.admin_pair_approve)).status == 403
+    assert (await pcall(app, preq(app, "/api/admin/pair", ip="127.0.0.1"), server.admin_pair_list)).status == 401
+
+
+async def test_pair_unknown_id_404_and_counts_as_failure(env):
+    app, cfg, _, _ = env
+    r = await pcall(app, preq(app, "/api/pair/nope", rid="nope"), server.api_pair_status)
+    assert r.status == 404 and json.loads(r.body) == {"ok": False, "state": "expired"}
+    for _ in range(20):
+        await pcall(app, preq(app, "/api/pair/nope", rid="nope"), server.api_pair_status)
+    assert app["core"].throttle.is_locked("192.168.50.50")

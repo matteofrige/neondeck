@@ -10,4 +10,5 @@ def test_docs_demo_is_in_sync():
     spec.loader.exec_module(mod)
     html = mod.build()
     assert 'name="neondeck-demo"' in html and 'rel="manifest"' not in html
+    assert "manifestToken" not in html
     assert (ROOT / "docs" / "demo.html").read_text(encoding="utf-8") == html, "run scripts/build_demo.py"

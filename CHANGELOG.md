@@ -2,6 +2,19 @@
 
 All notable changes to this project. Versions before 0.3.0 were released under the name *Claude Deck*.
 
+## 0.6.0
+
+- Stable phone address `http://neondeck.local:8787`, announced over mDNS (configurable with `lan_hostname`). The installed PWA keeps its origin, and its token, across networks and IP changes. The QR code uses the name; the IP URL stays available as a fallback (`neondeck qr`, admin panel).
+- The web manifest carries the token in `start_url` when requested with a valid one (throttled like the device endpoints), so iOS home-screen apps no longer ask for the token again.
+- The phone token screen can scan the QR code from a photo (iOS camera via a file input, decoded locally with the bundled jsQR 1.4.0, Apache-2.0). A live camera view needs HTTPS, which the LAN page does not have.
+- Pairing without typing the token: the phone token screen has an ABBINA button that shows a 6-digit code, which you approve on the computer in the admin panel, with `neondeck pair [code]`, or from the macOS notification that points to them. Requests expire after 2 minutes, only one is kept per IP (5 in total, 5 creations per IP per 10 minutes), and the network checks are unchanged. Pasting the token and the QR photo scan remain as alternatives.
+
+## 0.5.2
+
+- iTerm2: fixed a reconnection leak. After a disconnect the library's stale `App` singleton and the unclosed websockets exhausted the process file descriptors, which also broke network detection so phones saw "rete non fidata".
+- The server raises its file descriptor soft limit to 4096 at startup (launchd defaults to 256).
+- Phone layout: tiles no longer overlap, and landscape phones from 560 px wide use the side-by-side layout.
+
 ## 0.5.1
 
 - macOS: `neondeck install` waits for launchd to finish unloading the previous agent before loading the new one, and retries once on `Bootstrap failed: 5: Input/output error`.
