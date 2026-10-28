@@ -487,12 +487,15 @@ class LanController:
                 log.error("Impossibile ascoltare su %s:%s: %s", ip, cfg.get("port"), exc)
                 return
             self.listening_ip = ip
+            self._seen = None  # the next drop must be logged even if it lands in a state seen before
             log.info("Rete fidata '%s': in ascolto su %s:%s", self.network_name, ip, cfg.get("port"))
             return
         state = ("local-only" if self.local_only else mac or "sconosciuta", entry is not None)
         if state != self._seen:
             if self.local_only:
                 log.info("Modalità solo locale: nessun ascolto sulla rete")
+            elif net is None:
+                log.info("Rete non rilevata (%s): accesso dalla rete disattivato", self.network_reason or "sconosciuta")
             else:
                 log.info("Rete non fidata (%s): accesso dalla rete disattivato", mac or "sconosciuta")
         self._seen = state

@@ -2,6 +2,10 @@
 
 All notable changes to this project. Versions before 0.3.0 were released under the name *Claude Deck*.
 
+## 0.7.2
+
+- Network log: every time the LAN listener goes down it is now logged, also when the same state was already seen before (a short network detection failure after waking from sleep used to close the listener silently). When no network is detected the log says why (`no_route`, `no_arp`, `localnet_permission`).
+
 ## 0.7.1
 
 - The phone page is served with `Cache-Control: no-cache`, so the app installed on the iOS home screen picks up agent updates instead of keeping a stale copy.

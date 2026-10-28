@@ -114,6 +114,21 @@ async def test_no_network_stops_listener():
     assert h.events[1:] == [("stop",), ("down",)]
 
 
+async def test_every_listener_drop_is_logged(caplog):
+    import logging
+
+    h = harness()
+    with caplog.at_level(logging.INFO, logger="neondeck.net"):
+        for _ in range(2):  # blip after wake, recovery, same blip again: the second drop used to be silent
+            await h.ctl.check()
+            h.sys.gw = None
+            await h.ctl.check()
+            h.sys.gw = "192.168.50.1"
+    drops = [r.getMessage() for r in caplog.records if "Rete non rilevata" in r.getMessage()]
+    assert drops == [f"Rete non rilevata ({ng.NO_ROUTE}): accesso dalla rete disattivato"] * 2
+    assert h.events == [("start", "192.168.50.23"), ("stop",), ("down",)] * 2
+
+
 async def test_arp_incomplete_fails_closed():
     h = harness()
     h.sys.mac = None
